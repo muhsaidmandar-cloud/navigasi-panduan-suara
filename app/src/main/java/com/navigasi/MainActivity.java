@@ -2,9 +2,11 @@ package com.navigasi;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.graphics.Color;
@@ -22,11 +24,12 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private TextToSpeech tts;
     private boolean isTtsReady = false;
 
-    // Variabel pengaturan TTS
-    private float kecepatanBicara = 1.0f; // 1.0 adalah normal
-    private float nadaBicara = 1.0f;     // 1.0 adalah normal
+    // Pengaturan Suara & TTS
+    private float kecepatanBicara = 1.0f; 
+    private float nadaBicara = 1.0f;     
+    private int levelVolume = 5; 
 
-    // Variabel penyimpanan lokasi (Titik Karet/Tujuan)
+    // Penyimpanan Lokasi (Titik Karet/Tujuan)
     private double savedLat = 0.0;
     private double savedLon = 0.0;
     private boolean isLocationSaved = false;
@@ -35,15 +38,12 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
 
     // Status pemicu suara navigasi
     private boolean sudahPeringatan20m = false;
-    private boolean sudahTitikBelok = false;
     private boolean sudahTiba = false;
 
     @Override 
     public void onCreate(Bundle state) {
         super.onCreate(state);
-        
         tts = new TextToSpeech(this, this);
-        
         tampilkanMenuUtama();
     }
 
@@ -67,7 +67,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         info.setPadding(0, 16, 0, 24);
         box.addView(info);
         
-        // Tombol 1: Cek Posisi Saat Ini (Akurasi ketat <= 3 meter)
+        // Tombol 1: Cek Posisi Akurat (<= 3 meter)
         Button btnCekPosisi = new Button(this);
         btnCekPosisi.setText("DI MANA SAYA SEKARANG");
         btnCekPosisi.setOnClickListener(new View.OnClickListener() {
@@ -100,9 +100,9 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         box.addView(btnNavigasi);
 
-        // Tombol 4: Pengaturan TTS
+        // Tombol 4: Pengaturan TTS & Volume
         Button btnPengaturanTts = new Button(this);
-        btnPengaturanTts.setText("PENGATURAN TTS");
+        btnPengaturanTts.setText("PENGATURAN TTS & VOLUME");
         btnPengaturanTts.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -121,38 +121,73 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         boxTts.setPadding(32, 32, 32, 32);
 
         TextView titleTts = new TextView(this);
-        titleTts.setText("Pengaturan Suara TTS");
+        titleTts.setText("Pengaturan Suara & TTS");
         titleTts.setTextSize(22);
         titleTts.setTextColor(Color.BLACK);
         titleTts.setGravity(Gravity.CENTER);
         boxTts.addView(titleTts);
 
         final TextView infoTts = new TextView(this);
-        infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nNada: " + nadaBicara + "x");
+        infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nVolume Media: " + levelVolume);
         infoTts.setTextSize(16);
         infoTts.setGravity(Gravity.CENTER);
         infoTts.setPadding(0, 24, 0, 24);
         boxTts.addView(infoTts);
 
-        // Tombol Tambah Kecepatan
+        // Pilihan Mesin TTS Sistem
+        Button btnPilihMesinTts = new Button(this);
+        btnPilihMesinTts.setText("PILIH MESIN / SUARA TTS SYSTEM");
+        btnPilihMesinTts.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                try {
+                    Intent intent = new Intent("com.android.settings.TTS_SETTINGS");
+                    startActivity(intent);
+                } catch (Exception e) {
+                    ucapkanSuara("Pengaturan mesin TTS tidak ditemukan.");
+                }
+            }
+        });
+        boxTts.addView(btnPilihMesinTts);
+
+        // Ubah Kecepatan Bicara
         Button btnLebihCepat = new Button(this);
-        btnLebihCepat.setText("TAMBAH KECEPATAN BICARA");
+        btnLebihCepat.setText("UBAH KECEPATAN BICARA");
         btnLebihCepat.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (kecepatanBicara < 2.0f) {
                     kecepatanBicara += 0.25f;
                 } else {
-                    kecepatanBicara = 1.0f; // Reset ke normal jika sudah maksimal
+                    kecepatanBicara = 1.0f; 
                 }
                 terapkanSetelanTts();
-                infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nNada: " + nadaBicara + "x");
+                infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nVolume Media: " + levelVolume);
                 ucapkanSuara("Kecepatan suara diatur ke " + kecepatanBicara);
             }
         });
         boxTts.addView(btnLebihCepat);
 
-        // Tombol Uji Suara
+        // Atur Volume Suara Media
+        Button btnAturVolume = new Button(this);
+        btnAturVolume.setText("ATUR VOLUME MEDIA SUARA");
+        btnAturVolume.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+                int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+                levelVolume += 3;
+                if (levelVolume > maxVolume) {
+                    levelVolume = maxVolume / 2; 
+                }
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, levelVolume, AudioManager.FLAG_SHOW_UI);
+                infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nVolume Media: " + levelVolume);
+                ucapkanSuara("Volume suara disesuaikan.");
+            }
+        });
+        boxTts.addView(btnAturVolume);
+
+        // Uji Suara
         Button btnUjiSuara = new Button(this);
         btnUjiSuara.setText("UJI SUARA TTS");
         btnUjiSuara.setOnClickListener(new View.OnClickListener() {
@@ -163,7 +198,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         boxTts.addView(btnUjiSuara);
 
-        // Tombol Kembali ke Menu Utama
+        // Kembali ke Menu Utama
         Button btnKembali = new Button(this);
         btnKembali.setText("KEMBALI KE MENU UTAMA");
         btnKembali.setOnClickListener(new View.OnClickListener() {
@@ -207,7 +242,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                // Murni menggunakan satelit GPS (GPS_PROVIDER) tanpa network provider
+                // Murni menggunakan GPS Satelit tanpa Network Provider
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER, 
                     1000, 
@@ -225,30 +260,29 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private void cekPosisiSekarangAkurat() {
         sedangMencariPosisiSekarang = true;
         mulaiMendengarkanGPS();
-        ucapkanSuara("Mencari posisi Anda dengan akurasi tinggi, mohon tunggu sebentar di luar ruangan.");
-        info.setText("Mencari posisi (menunggu akurasi <= 3 meter)...");
+        ucapkanSuara("Mencari posisi akurat. Harap berada di luar ruangan.");
+        info.setText("Mencari posisi (Menunggu akurasi <= 3 meter)...");
     }
 
     private void simpanLokasiSaatIni() {
         if (!isLocationSaved) {
-            ucapkanSuara("Silakan tekan tombol Di Mana Saya Sekarang terlebih dahulu untuk mengunci titik akurat sebelum menyimpan.");
-            info.setText("Tekan 'Di Mana Saya Sekarang' dulu!");
+            ucapkanSuara("Tekan tombol Di Mana Saya Sekarang terlebih dahulu untuk mengunci koordinat akurat.");
+            info.setText("Belum ada titik akurat yang dikunci!");
             return;
         }
-        ucapkanSuara("Lokasi berhasil dikunci dan disimpan.");
+        ucapkanSuara("Lokasi berhasil disimpan.");
         info.setText("Lokasi Tersimpan Permanen!\nLat: " + savedLat + "\nLon: " + savedLon);
     }
 
     private void mulaiNavigasiTersimpan() {
         if (!isLocationSaved) {
-            ucapkanSuara("Belum ada lokasi yang tersimpan. Silakan simpan lokasi terlebih dahulu.");
+            ucapkanSuara("Belum ada lokasi yang tersimpan.");
             info.setText("Belum ada lokasi tersimpan!");
             return;
         }
         
         isNavigating = true;
         sudahPeringatan20m = false;
-        sudahTitikBelok = false;
         sudahTiba = false;
         
         mulaiMendengarkanGPS();
@@ -263,7 +297,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             double currentLon = location.getLongitude();
             float akurasi = location.getAccuracy();
             
-            // FITUR 1: Cek Posisi Saat Ini dengan Akurasi Ketat (<= 3 Meter)
+            // 1. Validasi Akurasi Ketat untuk "Di Mana Saya Sekarang" (Target <= 3 meter)
             if (sedangMencariPosisiSekarang) {
                 if (akurasi <= 3.0f) {
                     savedLat = currentLat;
@@ -271,44 +305,41 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     isLocationSaved = true;
                     sedangMencariPosisiSekarang = false;
                     
-                    String pesanPosisi = "Anda berada di koordinat akurat. Akurasi 3 meter.";
-                    ucapkanSuara(pesanPosisi);
-                    info.setText("Posisi Anda Saat Ini:\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m (Sangat Akurat)");
+                    ucapkanSuara("Posisi anda terkunci dengan akurasi tinggi.");
+                    info.setText("Posisi Saat Ini (Sangat Akurat):\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m");
                 } else {
-                    info.setText("Menyaring sinyal satelit...\nAkurasi saat ini: ± " + akurasi + " m (Target <= 3m)");
+                    info.setText("Menyaring sinyal satelit murni...\nAkurasi saat ini: ± " + akurasi + " meter (Target <= 3m)");
                 }
                 return;
             }
 
-            // Filter umum GPS stabil di bawah 10 meter untuk proses navigasi
+            // 2. Filter Navigasi (Hanya memproses data GPS stabil di bawah 10 meter)
             if (akurasi <= 10.0f) {
-                
-                // FITUR 2 & 3: Mode Navigasi Menuju Lokasi Tersimpan
                 if (isNavigating) {
                     float[] hasilJarak = new float[1];
                     Location.distanceBetween(currentLat, currentLon, savedLat, savedLon, hasilJarak);
                     float jarak = hasilJarak[0];
 
-                    // Peringatan 20 Meter Sebelum Tujuan/Belok
+                    // Peringatan Dini 20 Meter
                     if (jarak <= 20.0f && jarak > 2.0f && !sudahPeringatan20m) {
-                        ucapkanSuara("Perhatian, 20 meter lagi mendekati titik tujuan.");
+                        ucapkanSuara("Perhatian, 20 meter lagi mendekati tujuan.");
                         sudahPeringatan20m = true;
                     }
 
-                    // Tiba di Tujuan (Sangat presisi: 1 sampai 2 meter)
+                    // Presisi Tiba di Tujuan (1 sampai 2 meter)
                     if (jarak <= 2.0f && !sudahTiba) {
                         ucapkanSuara("Anda telah tiba di tujuan.");
                         info.setText("Anda telah tiba di tujuan!");
                         sudahTiba = true;
-                        isNavigating = false; // Hentikan navigasi otomatis
+                        isNavigating = false; 
                     } else if (!sudahTiba) {
-                        info.setText("Navigasi Aktif\n" +
-                                     "Akurasi GPS: ± " + (int)akurasi + " m\n" +
+                        info.setText("Navigasi Aktif (GPS Murni)\n" +
+                                     "Akurasi: ± " + (int)akurasi + " m\n" +
                                      "Sisa Jarak: " + (int)jarak + " meter");
                     }
                 }
             } else {
-                info.setText("Menunggu sinyal satelit stabil...\nAkurasi saat ini: ± " + akurasi + " m");
+                info.setText("Menunggu sinyal satelit stabil...\nAkurasi saat ini: ± " + akurasi + " meter");
             }
         }
     }
@@ -322,6 +353,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     @Override
     public void onProviderDisabled(String provider) {
         ucapkanSuara("GPS dimatikan.");
+        info.setText("GPS dimatikan.");
     }
 
     @Override
