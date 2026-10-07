@@ -22,6 +22,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private TextToSpeech tts;
     private boolean isTtsReady = false;
 
+    // Variabel pengaturan TTS
+    private float kecepatanBicara = 1.0f; // 1.0 adalah normal
+    private float nadaBicara = 1.0f;     // 1.0 adalah normal
+
     // Variabel penyimpanan lokasi (Titik Karet/Tujuan)
     private double savedLat = 0.0;
     private double savedLon = 0.0;
@@ -40,6 +44,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         
         tts = new TextToSpeech(this, this);
         
+        tampilkanMenuUtama();
+    }
+
+    private void tampilkanMenuUtama() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
@@ -91,8 +99,90 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             }
         });
         box.addView(btnNavigasi);
+
+        // Tombol 4: Pengaturan TTS
+        Button btnPengaturanTts = new Button(this);
+        btnPengaturanTts.setText("PENGATURAN TTS");
+        btnPengaturanTts.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                tampilkanHalamanPengaturanTts();
+            }
+        });
+        box.addView(btnPengaturanTts);
         
         setContentView(box);
+    }
+
+    private void tampilkanHalamanPengaturanTts() {
+        LinearLayout boxTts = new LinearLayout(this);
+        boxTts.setOrientation(LinearLayout.VERTICAL);
+        boxTts.setGravity(Gravity.CENTER);
+        boxTts.setPadding(32, 32, 32, 32);
+
+        TextView titleTts = new TextView(this);
+        titleTts.setText("Pengaturan Suara TTS");
+        titleTts.setTextSize(22);
+        titleTts.setTextColor(Color.BLACK);
+        titleTts.setGravity(Gravity.CENTER);
+        boxTts.addView(titleTts);
+
+        final TextView infoTts = new TextView(this);
+        infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nNada: " + nadaBicara + "x");
+        infoTts.setTextSize(16);
+        infoTts.setGravity(Gravity.CENTER);
+        infoTts.setPadding(0, 24, 0, 24);
+        boxTts.addView(infoTts);
+
+        // Tombol Tambah Kecepatan
+        Button btnLebihCepat = new Button(this);
+        btnLebihCepat.setText("TAMBAH KECEPATAN BICARA");
+        btnLebihCepat.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (kecepatanBicara < 2.0f) {
+                    kecepatanBicara += 0.25f;
+                } else {
+                    kecepatanBicara = 1.0f; // Reset ke normal jika sudah maksimal
+                }
+                terapkanSetelanTts();
+                infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nNada: " + nadaBicara + "x");
+                ucapkanSuara("Kecepatan suara diatur ke " + kecepatanBicara);
+            }
+        });
+        boxTts.addView(btnLebihCepat);
+
+        // Tombol Uji Suara
+        Button btnUjiSuara = new Button(this);
+        btnUjiSuara.setText("UJI SUARA TTS");
+        btnUjiSuara.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                ucapkanSuara("Ini adalah uji coba suara navigasi panduan suara.");
+            }
+        });
+        boxTts.addView(btnUjiSuara);
+
+        // Tombol Kembali ke Menu Utama
+        Button btnKembali = new Button(this);
+        btnKembali.setText("KEMBALI KE MENU UTAMA");
+        btnKembali.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                tampilkanMenuUtama();
+            }
+        });
+        boxTts.addView(btnKembali);
+
+        setContentView(boxTts);
+        ucapkanSuara("Menu pengaturan suara dibuka.");
+    }
+
+    private void terapkanSetelanTts() {
+        if (tts != null) {
+            tts.setSpeechRate(kecepatanBicara);
+            tts.setPitch(nadaBicara);
+        }
     }
 
     @Override
@@ -101,6 +191,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             int result = tts.setLanguage(new Locale("id", "ID"));
             if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
                 isTtsReady = true;
+                terapkanSetelanTts();
                 ucapkanSuara("Aplikasi navigasi siap digunakan.");
             }
         }
@@ -231,7 +322,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     @Override
     public void onProviderDisabled(String provider) {
         ucapkanSuara("GPS dimatikan.");
-        info.setText("GPS dimatikan.");
     }
 
     @Override
