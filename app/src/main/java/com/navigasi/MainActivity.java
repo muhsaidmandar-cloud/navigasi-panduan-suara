@@ -1,8 +1,12 @@
 package com.navigasi;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -15,6 +19,8 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 
 public class MainActivity extends Activity implements LocationListener, TextToSpeech.OnInitListener {
@@ -29,7 +35,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private float nadaBicara = 1.0f;     
     private int levelVolume = 5; 
 
-    private String targetTtsEngine = null; // null = Default sistem lokal aplikasi
+    private String targetTtsEngine = null; // null = Default sistem
     private String namaEngineAktif = "Default Sistem";
 
     // Penyimpanan Lokasi
@@ -58,7 +64,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         }
         
         try {
-            if (targetTtsEngine != null) {
+            if (targetTtsEngine != null && !targetTtsEngine.isEmpty()) {
                 tts = new TextToSpeech(this, this, targetTtsEngine);
             } else {
                 tts = new TextToSpeech(this, this);
@@ -145,56 +151,22 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         boxTts.addView(titleTts);
 
         final TextView infoTts = new TextView(this);
-        infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
+        infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x");
         infoTts.setTextSize(15);
         infoTts.setGravity(Gravity.CENTER);
         infoTts.setPadding(0, 24, 0, 24);
         boxTts.addView(infoTts);
 
-        // Tombol 1: Menggunakan Google TTS
-        Button btnGoogle = new Button(this);
-        btnGoogle.setText("GUNAKAN GOOGLE TTS");
-        btnGoogle.setOnClickListener(new View.OnClickListener() {
+        // Tombol untuk Memilih Mesin TTS secara Otomatis dari yang Terinstal di HP
+        Button btnPilihEngine = new Button(this);
+        btnPilihEngine.setText("PILIH MESIN TTS TERINSTAL");
+        btnPilihEngine.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                targetTtsEngine = "com.google.android.tts";
-                namaEngineAktif = "Google TTS";
-                inisialisasiTtsMandiri();
-                infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
-                ucapkanSuara("Menggunakan Google TTS.");
+                tampilkanDialogPilihanTts(infoTts);
             }
         });
-        boxTts.addView(btnGoogle);
-
-        // Tombol 2: Menggunakan Vocalizer Ex2 (Paket standar Vocalizer)
-        Button btnVocalizer = new Button(this);
-        btnVocalizer.setText("GUNAKAN VOCALIZER EX2");
-        btnVocalizer.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                targetTtsEngine = "es.codefactory.vocalizer.en.eFIGS"; 
-                namaEngineAktif = "Vocalizer Ex2";
-                inisialisasiTtsMandiri();
-                infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
-                ucapkanSuara("Menggunakan Vocalizer Ex2.");
-            }
-        });
-        boxTts.addView(btnVocalizer);
-
-        // Tombol 3: Menggunakan Default Sistem (Aman untuk pembaca layar lokal)
-        Button btnDefault = new Button(this);
-        btnDefault.setText("GUNAKAN DEFAULT SISTEM");
-        btnDefault.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                targetTtsEngine = null;
-                namaEngineAktif = "Default Sistem";
-                inisialisasiTtsMandiri();
-                infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
-                ucapkanSuara("Menggunakan default sistem.");
-            }
-        });
-        boxTts.addView(btnDefault);
+        boxTts.addView(btnPilihEngine);
 
         Button btnLebihCepat = new Button(this);
         btnLebihCepat.setText("UBAH KECEPATAN BICARA");
@@ -208,23 +180,21 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 }
                 terapkanSetelanTts();
                 ucapkanSuara("Kecepatan diatur ke " + kecepatanBicara);
+                infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x");
             }
         });
         boxTts.addView(btnLebihCepat);
 
+        // Tombol Atur Volume dengan Memunculkan Slider / Kontrol Volume Sistem
         Button btnAturVolume = new Button(this);
-        btnAturVolume.setText("ATUR VOLUME MEDIA SUARA");
+        btnAturVolume.setText("ATUR VOLUME MEDIA / ALARM");
         btnAturVolume.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-                levelVolume += 3;
-                if (levelVolume > maxVolume) {
-                    levelVolume = maxVolume / 2; 
-                }
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, levelVolume, AudioManager.FLAG_SHOW_UI);
-                ucapkanSuara("Volume disesuaikan.");
+                // Memunculkan UI Pengaturan Volume Bawaan Sistem agar Kak Aldi bisa atur Media/Alarm langsung
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, audioManager.getStreamVolume(AudioManager.STREAM_MUSIC), AudioManager.FLAG_SHOW_UI);
+                ucapkanSuara("Pengaturan volume ditampilkan.");
             }
         });
         boxTts.addView(btnAturVolume);
@@ -251,6 +221,60 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
 
         setContentView(boxTts);
         ucapkanSuara("Pengaturan suara dibuka.");
+    }
+
+    // Fungsi untuk mendeteksi semua mesin TTS yang terinstal di HP Kak Aldi secara dinamis
+    private void tampilkanDialogPilihanTts(final TextView infoTts) {
+        try {
+            PackageManager pm = getPackageManager();
+            Intent intent = new Intent(TextToSpeech.Engine.ACTION_CHECK_TTS_DATA);
+            List<ResolveInfo> list = pm.queryIntentActivities(intent, 0);
+            
+            // Jika kosong, ambil intent alternatif
+            if (list == null || list.isEmpty()) {
+                intent = new Intent("android.intent.action.TTS_SERVICE");
+                list = pm.queryIntentActivities(intent, 0);
+            }
+
+            final List<String> namaEngineList = new ArrayList<>();
+            final List<String> packageEngineList = new ArrayList<>();
+
+            // Tambahkan opsi default sistem
+            namaEngineList.add("Default Sistem");
+            packageEngineList.add(null);
+
+            // Ambil daftar engine yang terinstal di perangkat
+            if (tts != null) {
+                try {
+                    List<TextToSpeech.EngineInfo> engines = tts.getEngines();
+                    if (engines != null) {
+                        for (TextToSpeech.EngineInfo engine : engines) {
+                            namaEngineList.add(engine.label);
+                            packageEngineList.add(engine.name);
+                        }
+                    }
+                } catch (Exception e) {}
+            }
+
+            CharSequence[] items = namaEngineList.toArray(new CharSequence[0]);
+
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Pilih Mesin TTS");
+            builder.setItems(items, new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+                    targetTtsEngine = packageEngineList.get(which);
+                    namaEngineAktif = namaEngineList.get(which);
+                    
+                    inisialisasiTtsMandiri();
+                    infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x");
+                    ucapkanSuara("Berhasil beralih ke " + namaEngineAktif);
+                }
+            });
+            builder.show();
+        } catch (Exception e) {
+            ucapkanSuara("Gagal memuat daftar TTS.");
+        }
     }
 
     private void terapkanSetelanTts() {
