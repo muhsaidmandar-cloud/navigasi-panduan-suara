@@ -16,7 +16,6 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.Locale;
-import java.util.List;
 
 public class MainActivity extends Activity implements LocationListener, TextToSpeech.OnInitListener {
     
@@ -29,9 +28,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private float kecepatanBicara = 1.0f; 
     private float nadaBicara = 1.0f;     
     private int levelVolume = 5; 
-    
-    // Menyimpan nama paket mesin TTS pilihan (jika ada)
-    private String selectedTtsEngine = null;
+
+    // Pilihan Paket Mesin TTS Khusus Aplikasi Ini (Contoh: Google TTS = "com.google.android.tts")
+    // Dengan ini, aplikasi tidak akan mencampuri mesin pembaca layar utama.
+    private String targetTtsEngine = "com.google.android.tts"; 
 
     // Penyimpanan Lokasi
     private double savedLat = 0.0;
@@ -47,31 +47,25 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     @Override 
     public void onCreate(Bundle state) {
         super.onCreate(state);
-        inisialisasiTts(selectedTtsEngine);
+        inisialisasiTtsMandiri();
         tampilkanMenuUtama();
     }
 
-    private void inisialisasiTts(String enginePackage) {
+    private void inisialisasiTtsMandiri() {
         if (tts != null) {
-            tts.stop();
-            tts.shutdown();
+            try {
+                tts.stop();
+                tts.shutdown();
+            } catch (Exception e) {}
         }
         
-        if (enginePackage != null && !enginePackage.isEmpty()) {
-            // Menggunakan mesin TTS spesifik yang dipilih
-            tts = new TextToSpeech(this, this, enginePackage);
-        } else {
-            // Menggunakan mesin TTS default sistem
+        // Memaksa TextToSpeech menggunakan engine mandiri khusus aplikasi ini 
+        // tanpa mengubah setelan global sistem atau pembaca layar.
+        try {
+            tts = new TextToSpeech(this, this, targetTtsEngine);
+        } catch (Exception e) {
+            // Fallback jika engine pilihan tidak ada di perangkat
             tts = new TextToSpeech(this, this);
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        // Refresh ulang saat kembali dari pengaturan untuk mendeteksi perubahan
-        if (tts == null) {
-            inisialisasiTts(selectedTtsEngine);
         }
     }
 
@@ -106,7 +100,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         box.addView(btnCekPosisi);
 
         Button btnSimpan = new Button(this);
-        btnSimpan.setText("SIMPAN LOKASI SAAT INI");
+        btnSimpan.setText("SIMPAN LOKASI SAAT ISINI");
         btnSimpan.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -126,7 +120,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         box.addView(btnNavigasi);
 
         Button btnPengaturanTts = new Button(this);
-        btnPengaturanTts.setText("PENGATURAN TTS & VOLUME");
+        btnPengaturanTts.setText("PENGATURAN SUARA & VOLUME");
         btnPengaturanTts.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -145,55 +139,46 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         boxTts.setPadding(32, 32, 32, 32);
 
         TextView titleTts = new TextView(this);
-        titleTts.setText("Pengaturan Suara & TTS");
+        titleTts.setText("Pengaturan Suara Mandiri");
         titleTts.setTextSize(22);
         titleTts.setTextColor(Color.BLACK);
         titleTts.setGravity(Gravity.CENTER);
         boxTts.addView(titleTts);
 
         final TextView infoTts = new TextView(this);
-        infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nVolume Media: " + levelVolume);
-        infoTts.setTextSize(16);
+        infoTts.setText("Engine Khusus: Google TTS\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
+        infoTts.setTextSize(15);
         infoTts.setGravity(Gravity.CENTER);
         infoTts.setPadding(0, 24, 0, 24);
         boxTts.addView(infoTts);
 
-        // Tombol Membuka Pengaturan TTS Sistem
-        Button btnPilihMesinTts = new Button(this);
-        btnPilihMesinTts.setText("PILIH MESIN / SUARA TTS SYSTEM");
-        btnPilihMesinTts.setOnClickListener(new View.OnClickListener() {
+        // Tombol mengganti engine khusus aplikasi ini ke bawaan sistem (tanpa mengganggu pembaca layar)
+        Button btnGantiKeDefault = new Button(this);
+        btnGantiKeDefault.setText("GUNAKAN TTS DEFAULT SISTEM");
+        btnGantiKeDefault.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                try {
-                    Intent intent = new Intent("com.android.settings.TTS_SETTINGS");
-                    startActivity(intent);
-                } catch (Exception e) {
-                    // Fallback jika intent setting spesifik gagal
-                    try {
-                        startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
-                    } catch (Exception ex) {
-                        ucapkanSuara("Pengaturan sistem tidak dapat dibuka.");
-                    }
-                }
+                targetTtsEngine = null; // null berarti pakai default sistem secara lokal
+                inisialisasiTtsMandiri();
+                infoTts.setText("Engine Khusus: Default Sistem\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
+                ucapkanSuara("Beralih ke suara default sistem.");
             }
         });
-        boxTts.addView(btnPilihMesinTts);
+        boxTts.addView(btnGantiKeDefault);
 
-        // Tombol Reset/Muat Ulang Mesin TTS Aktif dari Sistem
-        Button btnMuatUlangTts = new Button(this);
-        btnMuatUlangTts.setText("TERAPKAN PERUBAHAN MESIN TTS");
-        btnMuatUlangTts.setOnClickListener(new View.OnClickListener() {
+        // Tombol mengganti engine khusus aplikasi ini ke Google TTS
+        Button btnGantiKeGoogle = new Button(this);
+        btnGantiKeGoogle.setText("GUNAKAN GOOGLE TTS KHUSUS");
+        btnGantiKeGoogle.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // Mengambil ulang mesin default terbaru yang dipilih pengguna di HP
-                if (tts != null) {
-                    String engineAktif = tts.getDefaultEngine();
-                    inisialisasiTts(engineAktif);
-                }
-                ucapkanSuara("Mesin TTS diperbarui.");
+                targetTtsEngine = "com.google.android.tts";
+                inisialisasiTtsMandiri();
+                infoTts.setText("Engine Khusus: Google TTS\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
+                ucapkanSuara("Beralih ke Google TTS.");
             }
         });
-        boxTts.addView(btnMuatUlangTts);
+        boxTts.addView(btnGantiKeGoogle);
 
         Button btnLebihCepat = new Button(this);
         btnLebihCepat.setText("UBAH KECEPATAN BICARA");
@@ -206,7 +191,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     kecepatanBicara = 1.0f; 
                 }
                 terapkanSetelanTts();
-                infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nVolume Media: " + levelVolume);
                 ucapkanSuara("Kecepatan suara diatur ke " + kecepatanBicara);
             }
         });
@@ -224,8 +208,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     levelVolume = maxVolume / 2; 
                 }
                 audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, levelVolume, AudioManager.FLAG_SHOW_UI);
-                infoTts.setText("Kecepatan: " + kecepatanBicara + "x\nVolume Media: " + levelVolume);
-                ucapkanSuara("Volume suara disesuaikan.");
+                ucapkanSuara("Volume disesuaikan.");
             }
         });
         boxTts.addView(btnAturVolume);
@@ -235,7 +218,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         btnUjiSuara.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ucapkanSuara("Ini adalah uji coba suara navigasi panduan suara.");
+                ucapkanSuara("Uji coba suara navigasi mandiri.");
             }
         });
         boxTts.addView(btnUjiSuara);
@@ -251,31 +234,37 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         boxTts.addView(btnKembali);
 
         setContentView(boxTts);
-        ucapkanSuara("Menu pengaturan suara dibuka.");
+        ucapkanSuara("Menu pengaturan suara mandiri dibuka.");
     }
 
     private void terapkanSetelanTts() {
         if (tts != null) {
-            tts.setSpeechRate(kecepatanBicara);
-            tts.setPitch(nadaBicara);
+            try {
+                tts.setSpeechRate(kecepatanBicara);
+                tts.setPitch(nadaBicara);
+            } catch (Exception e) {}
         }
     }
 
     @Override
     public void onInit(int status) {
         if (status == TextToSpeech.SUCCESS) {
-            int result = tts.setLanguage(new Locale("id", "ID"));
-            if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
-                isTtsReady = true;
-                terapkanSetelanTts();
-                ucapkanSuara("Mesin suara siap.");
-            }
+            try {
+                int result = tts.setLanguage(new Locale("id", "ID"));
+                if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                    isTtsReady = true;
+                    terapkanSetelanTts();
+                    ucapkanSuara("Suara navigasi mandiri siap.");
+                }
+            } catch (Exception e) {}
         }
     }
 
     private void ucapkanSuara(String teks) {
         if (isTtsReady && tts != null) {
-            tts.speak(teks, TextToSpeech.QUEUE_FLUSH, null, null);
+            try {
+                tts.speak(teks, TextToSpeech.QUEUE_FLUSH, null, null);
+            } catch (Exception e) {}
         }
     }
 
@@ -283,14 +272,9 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER, 
-                    1000, 
-                    0.5f, 
-                    this
-                );
+                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0.5f, this);
             } else {
-                ucapkanSuara("GPS belum aktif. Mohon aktifkan GPS perangkat.");
+                ucapkanSuara("GPS belum aktif.");
             }
         } catch (SecurityException e) {
             ucapkanSuara("Izin lokasi ditolak.");
@@ -300,33 +284,31 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private void cekPosisiSekarangAkurat() {
         sedangMencariPosisiSekarang = true;
         mulaiMendengarkanGPS();
-        ucapkanSuara("Mencari posisi akurat. Harap berada di luar ruangan.");
-        info.setText("Mencari posisi (Menunggu akurasi <= 3 meter)...");
+        ucapkanSuara("Mencari posisi akurat. Berada di luar ruangan.");
+        info.setText("Mencari posisi (Target akurasi <= 3 meter)...");
     }
 
     private void simpanLokasiSaatIni() {
         if (!isLocationSaved) {
-            ucapkanSuara("Tekan tombol Di Mana Saya Sekarang terlebih dahulu untuk mengunci koordinat akurat.");
-            info.setText("Belum ada titik akurat yang dikunci!");
+            ucapkanSuara("Tekan tombol Di Mana Saya Sekarang terlebih dahulu.");
+            info.setText("Belum ada titik akurat!");
             return;
         }
         ucapkanSuara("Lokasi berhasil disimpan.");
-        info.setText("Lokasi Tersimpan Permanen!\nLat: " + savedLat + "\nLon: " + savedLon);
+        info.setText("Lokasi Tersimpan!\nLat: " + savedLat + "\nLon: " + savedLon);
     }
 
     private void mulaiNavigasiTersimpan() {
         if (!isLocationSaved) {
-            ucapkanSuara("Belum ada lokasi yang tersimpan.");
-            info.setText("Belum ada lokasi tersimpan!");
+            ucapkanSuara("Belum ada lokasi tersimpan.");
+            info.setText("Belum ada lokasi!");
             return;
         }
-        
         isNavigating = true;
         sudahPeringatan20m = false;
         sudahTiba = false;
-        
         mulaiMendengarkanGPS();
-        ucapkanSuara("Navigasi ke lokasi tersimpan dimulai.");
+        ucapkanSuara("Navigasi dimulai.");
         info.setText("Navigasi aktif menuju lokasi tersimpan...");
     }
 
@@ -343,11 +325,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     savedLon = currentLon;
                     isLocationSaved = true;
                     sedangMencariPosisiSekarang = false;
-                    
-                    ucapkanSuara("Posisi anda terkunci dengan akurasi tinggi.");
-                    info.setText("Posisi Saat Ini (Sangat Akurat):\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m");
+                    ucapkanSuara("Posisi terkunci akurat.");
+                    info.setText("Posisi Akurat:\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m");
                 } else {
-                    info.setText("Menyaring sinyal satelit murni...\nAkurasi saat ini: ± " + akurasi + " meter (Target <= 3m)");
+                    info.setText("Menyaring sinyal GPS...\nAkurasi: ± " + akurasi + " meter (Target <= 3m)");
                 }
                 return;
             }
@@ -359,44 +340,36 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     float jarak = hasilJarak[0];
 
                     if (jarak <= 20.0f && jarak > 2.0f && !sudahPeringatan20m) {
-                        ucapkanSuara("Perhatian, 20 meter lagi mendekati tujuan.");
+                        ucapkanSuara("20 meter lagi mendekati tujuan.");
                         sudahPeringatan20m = true;
                     }
 
                     if (jarak <= 2.0f && !sudahTiba) {
                         ucapkanSuara("Anda telah tiba di tujuan.");
-                        info.setText("Anda telah tiba di tujuan!");
+                        info.setText("Tiba di tujuan!");
                         sudahTiba = true;
                         isNavigating = false; 
                     } else if (!sudahTiba) {
-                        info.setText("Navigasi Aktif (GPS Murni)\n" +
-                                     "Akurasi: ± " + (int)akurasi + " m\n" +
-                                     "Sisa Jarak: " + (int)jarak + " meter");
+                        info.setText("Navigasi GPS Murni\nAkurasi: ± " + (int)akurasi + " m\nJarak: " + (int)jarak + " m");
                     }
                 }
             } else {
-                info.setText("Menunggu sinyal satelit stabil...\nAkurasi saat ini: ± " + akurasi + " meter");
+                info.setText("Menunggu sinyal satelit...\nAkurasi: ± " + akurasi + " m");
             }
         }
     }
 
-    @Override
-    public void onStatusChanged(String provider, int status, Bundle extras) {}
-
-    @Override
-    public void onProviderEnabled(String provider) {}
-
-    @Override
-    public void onProviderDisabled(String provider) {
-        ucapkanSuara("GPS dimatikan.");
-        info.setText("GPS dimatikan.");
-    }
+    @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
+    @Override public void onProviderEnabled(String provider) {}
+    @Override public void onProviderDisabled(String provider) { ucapkanSuara("GPS dimatikan."); }
 
     @Override
     protected void onDestroy() {
         if (tts != null) {
-            tts.stop();
-            tts.shutdown();
+            try {
+                tts.stop();
+                tts.shutdown();
+            } catch (Exception e) {}
         }
         if (locationManager != null) {
             locationManager.removeUpdates(this);
