@@ -18,6 +18,7 @@ import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.List;
@@ -33,7 +34,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     // Pengaturan Suara & TTS
     private float kecepatanBicara = 1.0f; 
     private float nadaBicara = 1.0f;     
-    private int levelVolume = 5; 
 
     private String targetTtsEngine = null; // null = Default sistem
     private String namaEngineAktif = "Default Sistem";
@@ -157,7 +157,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         infoTts.setPadding(0, 24, 0, 24);
         boxTts.addView(infoTts);
 
-        // Tombol untuk Memilih Mesin TTS secara Otomatis dari yang Terinstal di HP
         Button btnPilihEngine = new Button(this);
         btnPilihEngine.setText("PILIH MESIN TTS TERINSTAL");
         btnPilihEngine.setOnClickListener(new View.OnClickListener() {
@@ -185,16 +184,13 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         boxTts.addView(btnLebihCepat);
 
-        // Tombol Atur Volume dengan Memunculkan Slider / Kontrol Volume Sistem
+        // Tombol Volume dengan Dialog Slider Interaktif
         Button btnAturVolume = new Button(this);
         btnAturVolume.setText("ATUR VOLUME MEDIA / ALARM");
         btnAturVolume.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-                // Memunculkan UI Pengaturan Volume Bawaan Sistem agar Kak Aldi bisa atur Media/Alarm langsung
-                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, audioManager.getStreamVolume(AudioManager.STREAM_MUSIC), AudioManager.FLAG_SHOW_UI);
-                ucapkanSuara("Pengaturan volume ditampilkan.");
+                tampilkanDialogVolume();
             }
         });
         boxTts.addView(btnAturVolume);
@@ -223,19 +219,8 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         ucapkanSuara("Pengaturan suara dibuka.");
     }
 
-    // Fungsi untuk mendeteksi semua mesin TTS yang terinstal di HP Kak Aldi secara dinamis
     private void tampilkanDialogPilihanTts(final TextView infoTts) {
         try {
-            PackageManager pm = getPackageManager();
-            Intent intent = new Intent(TextToSpeech.Engine.ACTION_CHECK_TTS_DATA);
-            List<ResolveInfo> list = pm.queryIntentActivities(intent, 0);
-            
-            // Jika kosong, ambil intent alternatif
-            if (list == null || list.isEmpty()) {
-                intent = new Intent("android.intent.action.TTS_SERVICE");
-                list = pm.queryIntentActivities(intent, 0);
-            }
-
             final List<String> namaEngineList = new ArrayList<>();
             final List<String> packageEngineList = new ArrayList<>();
 
@@ -243,7 +228,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             namaEngineList.add("Default Sistem");
             packageEngineList.add(null);
 
-            // Ambil daftar engine yang terinstal di perangkat
+            // Ambil daftar engine menggunakan TTS instance yang mendeteksi engine sistem
             if (tts != null) {
                 try {
                     List<TextToSpeech.EngineInfo> engines = tts.getEngines();
@@ -275,6 +260,54 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         } catch (Exception e) {
             ucapkanSuara("Gagal memuat daftar TTS.");
         }
+    }
+
+    // Dialog Pengatur Volume Mandiri
+    private void tampilkanDialogVolume() {
+        final AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        final int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
+        final int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+
+        LinearLayout layout = new LinearLayout(this);
+        layout.setOrientation(LinearLayout.VERTICAL);
+        layout.setPadding(40, 40, 40, 40);
+
+        final TextView tvVolume = new TextView(this);
+        tvVolume.setText("Level Volume Media: " + currentVolume + " / " + maxVolume);
+        tvVolume.setTextSize(16);
+        tvVolume.setGravity(Gravity.CENTER);
+        layout.addView(tvVolume);
+
+        final SeekBar seekBar = new SeekBar(this);
+        seekBar.setMax(maxVolume);
+        seekBar.setProgress(currentVolume);
+        seekBar.setPadding(20, 40, 20, 20);
+        layout.addView(seekBar);
+
+        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override
+            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
+                if (fromUser) {
+                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, progress, 0);
+                    tvVolume.setText("Level Volume Media: " + progress + " / " + maxVolume);
+                }
+            }
+            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
+            @Override public void onStopTrackingTouch(SeekBar seekBar) {
+                ucapkanSuara("Volume diatur.");
+            }
+        });
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Atur Volume Suara");
+        builder.setView(layout);
+        builder.setPositiveButton("Tutup", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                dialog.dismiss();
+            }
+        });
+        builder.show();
     }
 
     private void terapkanSetelanTts() {
