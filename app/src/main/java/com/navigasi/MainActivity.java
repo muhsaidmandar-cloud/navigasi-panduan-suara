@@ -202,7 +202,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         box.addView(btnNavigasi);
 
-        // --- FITUR HENTIKAN NAVIGASI (BARU) ---
+        // --- FITUR HENTIKAN NAVIGASI ---
         Button btnHentikanNavigasi = new Button(this);
         btnHentikanNavigasi.setText("HENTIKAN NAVIGASI");
         btnHentikanNavigasi.setOnClickListener(new View.OnClickListener() {
@@ -313,7 +313,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 savedLon = hasil.lon;
                 isLocationSaved = true;
 
-                // Hitung estimasi jarak detail dari posisi terakhir GPS jika tersedia
                 String infoJarakDetail = "";
                 try {
                     Location lastLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
@@ -864,7 +863,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             }
 
             if (isNavigating) {
-                // Informasi Jarak Total ke Titik Tujuan Akhir
                 float[] jarakTotalArr = new float[1];
                 Location.distanceBetween(currentLat, currentLon, savedLat, savedLon, jarakTotalArr);
                 float jarakTotalMeter = jarakTotalArr[0];
@@ -891,4 +889,38 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     if (jarakKeBelokan <= 4.0f) {
                         indexInstruksiAktif++;
                         if (indexInstruksiAktif < daftarInstruksi.size()) {
-                            InstruksiRute nextInstruksi = daftarInstruksi.get
+                            InstruksiRute nextInstruksi = daftarInstruksi.get(indexInstruksiAktif);
+                            ucapkanSuara(nextInstruksi.pesanPanduan);
+                        } else {
+                            ucapkanSuara("Anda telah tiba di tujuan.");
+                            info.setText("Tiba di tujuan!");
+                            isNavigating = false;
+                        }
+                    } else {
+                        info.setText("Panduan Belokan:\n" + instruksi.pesanPanduan + "\nJarak ke Belokan: " + (int)jarakKeBelokan + " m\n" + teksJarakTotal);
+                    }
+                } else {
+                    info.setText("Navigasi Aktif\n" + teksJarakTotal);
+                }
+            }
+        }
+    }
+
+    @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
+    @Override public void onProviderEnabled(String provider) {}
+    @Override public void onProviderDisabled(String provider) { ucapkanSuara("GPS dimatikan."); }
+
+    @Override
+    protected void onDestroy() {
+        if (tts != null) {
+            try {
+                tts.stop();
+                tts.shutdown();
+            } catch (Exception e) {}
+        }
+        if (locationManager != null) {
+            locationManager.removeUpdates(this);
+        }
+        super.onDestroy();
+    }
+}
