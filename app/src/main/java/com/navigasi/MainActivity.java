@@ -44,6 +44,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private String targetTtsEngine = null; 
     private String namaEngineAktif = "Default Sistem";
 
+    // Pilihan Stream Audio untuk TTS / Aplikasi (Default: STREAM_MUSIC)
+    private int selectedAudioStream = AudioManager.STREAM_MUSIC;
+    private String namaStreamAktif = "Media / Musik";
+
     // Penyimpanan Lokasi & Rute Belokan
     private double savedLat = 0.0;
     private double savedLon = 0.0;
@@ -51,11 +55,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private boolean isNavigating = false;
     private boolean sedangMencariPosisiSekarang = false;
 
-    // Daftar instruksi belokan hasilunduhan rute
+    // Daftar instruksi belokan hasil unduhan rute
     private List<InstruksiRute> daftarInstruksi = new ArrayList<>();
     private int indexInstruksiAktif = 0;
 
-    // Kelas bantu untuk menyimpan data instruksi belokan
     private static class InstruksiRute {
         double lat;
         double lon;
@@ -72,6 +75,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     @Override 
     public void onCreate(Bundle state) {
         super.onCreate(state);
+        setVolumeControlStream(selectedAudioStream);
         inisialisasiTtsMandiri();
         tampilkanMenuUtama();
     }
@@ -108,7 +112,11 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         box.addView(title);
         
         info = new TextView(this);
-        info.setText("Tekan tombol di bawah untuk mulai.");
+        if (isLocationSaved) {
+            info.setText("Lokasi Tersimpan:\nLat: " + savedLat + ", Lon: " + savedLon);
+        } else {
+            info.setText("Tekan tombol di bawah untuk mulai.");
+        }
         info.setTextSize(15);
         info.setGravity(Gravity.CENTER);
         info.setPadding(0, 16, 0, 24);
@@ -133,6 +141,17 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             }
         });
         box.addView(btnSimpan);
+
+        // Tombol Edit Lokasi Tersimpan
+        Button btnEditLokasi = new Button(this);
+        btnEditLokasi.setText("EDIT / KELOLA LOKASI TERSIMPAN");
+        btnEditLokasi.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                tampilkanDialogKelolaLokasi();
+            }
+        });
+        box.addView(btnEditLokasi);
 
         Button btnNavigasi = new Button(this);
         btnNavigasi.setText("MULAI NAVIGASI BELOKAN");
@@ -171,7 +190,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         boxTts.addView(titleTts);
 
         final TextView infoTts = new TextView(this);
-        infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x");
+        infoTts.setText("Engine: " + namaEngineAktif + "\nStream: " + namaStreamAktif + "\nKecepatan: " + kecepatanBicara + "x");
         infoTts.setTextSize(15);
         infoTts.setGravity(Gravity.CENTER);
         infoTts.setPadding(0, 24, 0, 24);
@@ -187,6 +206,17 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         boxTts.addView(btnPilihEngine);
 
+        // Tombol Pilih Jenis Stream Volume
+        Button btnPilihStream = new Button(this);
+        btnPilihStream.setText("PILIH JENIS STREAM VOLUME");
+        btnPilihStream.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                tampilkanDialogPilihanStream(infoTts);
+            }
+        });
+        boxTts.addView(btnPilihStream);
+
         Button btnLebihCepat = new Button(this);
         btnLebihCepat.setText("UBAH KECEPATAN BICARA");
         btnLebihCepat.setOnClickListener(new View.OnClickListener() {
@@ -199,13 +229,13 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 }
                 terapkanSetelanTts();
                 ucapkanSuara("Kecepatan diatur ke " + kecepatanBicara);
-                infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x");
+                infoTts.setText("Engine: " + namaEngineAktif + "\nStream: " + namaStreamAktif + "\nKecepatan: " + kecepatanBicara + "x");
             }
         });
         boxTts.addView(btnLebihCepat);
 
         Button btnAturVolume = new Button(this);
-        btnAturVolume.setText("ATUR VOLUME MEDIA");
+        btnAturVolume.setText("ATUR LEVEL VOLUME");
         btnAturVolume.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -238,6 +268,75 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         ucapkanSuara("Pengaturan suara dibuka.");
     }
 
+    private void tampilkanDialogKelolaLokasi() {
+        if (!isLocationSaved) {
+            ucapkanSuara("Belum ada lokasi yang tersimpan untuk dikelola.");
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Kelola Lokasi");
+            builder.setMessage("Belum ada lokasi tersimpan saat ini.");
+            builder.setPositiveButton("Tutup", null);
+            builder.show();
+            return;
+        }
+
+        CharSequence[] opsi = {"Ganti dengan Lokasi Saat Ini", "Hapus Lokasi Tersimpan"};
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Kelola Lokasi Tersimpan\n(Lat: " + savedLat + ", Lon: " + savedLon + ")");
+        builder.setItems(opsi, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                if (which == 0) {
+                    // Opsi Edit: Timpa dengan koordinat saat ini (jika sudah didapat via cek posisi atau ambil dari last known)
+                    Location loc = null;
+                    try {
+                        if (locationManager != null) {
+                            loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                        }
+                    } catch (Exception e) {}
+
+                    if (loc != null) {
+                        savedLat = loc.getLatitude();
+                        savedLon = loc.getLongitude();
+                        isLocationSaved = true;
+                        ucapkanSuara("Lokasi berhasil diperbarui dengan posisi terbaru.");
+                        info.setText("Lokasi Diperbarui!\nLat: " + savedLat + "\nLon: " + savedLon);
+                    } else {
+                        ucapkanSuara("Gagal mengambil posisi terbaru. Lakukan 'Di Mana Saya Sekarang' terlebih dahulu.");
+                    }
+                } else if (which == 1) {
+                    // Opsi Hapus
+                    savedLat = 0.0;
+                    savedLon = 0.0;
+                    isLocationSaved = false;
+                    ucapkanSuara("Lokasi tersimpan telah dihapus.");
+                    info.setText("Tidak ada lokasi tersimpan.");
+                }
+            }
+        });
+        builder.setNegativeButton("Batal", null);
+        builder.show();
+        ucapkanSuara("Menu kelola lokasi dibuka.");
+    }
+
+    private void tampilkanDialogPilihanStream(final TextView infoTts) {
+        final String[] namaStreamList = {"Media / Musik", "Volume Dering (Ringtone)", "Volume Notifikasi"};
+        final int[] streamCodeList = {AudioManager.STREAM_MUSIC, AudioManager.STREAM_RING, AudioManager.STREAM_NOTIFICATION};
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Pilih Jenis Stream Volume");
+        builder.setItems(namaStreamList, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                selectedAudioStream = streamCodeList[which];
+                namaStreamAktif = namaStreamList[which];
+                setVolumeControlStream(selectedAudioStream);
+                infoTts.setText("Engine: " + namaEngineAktif + "\nStream: " + namaStreamAktif + "\nKecepatan: " + kecepatanBicara + "x");
+                ucapkanSuara("Stream volume diubah ke " + namaStreamAktif);
+            }
+        });
+        builder.show();
+    }
+
     private void tampilkanDialogPilihanTts(final TextView infoTts) {
         try {
             final List<String> namaEngineList = new ArrayList<>();
@@ -265,7 +364,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     targetTtsEngine = packageEngineList.get(which);
                     namaEngineAktif = namaEngineList.get(which);
                     inisialisasiTtsMandiri();
-                    infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x");
+                    infoTts.setText("Engine: " + namaEngineAktif + "\nStream: " + namaStreamAktif + "\nKecepatan: " + kecepatanBicara + "x");
                     ucapkanSuara("Berhasil beralih ke " + namaEngineAktif);
                 }
             });
@@ -277,15 +376,15 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
 
     private void tampilkanDialogVolume() {
         final AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        final int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
-        final int currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
+        final int maxVolume = audioManager.getStreamMaxVolume(selectedAudioStream);
+        final int currentVolume = audioManager.getStreamVolume(selectedAudioStream);
 
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         layout.setPadding(40, 40, 40, 40);
 
         final TextView tvVolume = new TextView(this);
-        tvVolume.setText("Level Volume Media: " + currentVolume + " / " + maxVolume);
+        tvVolume.setText(namaStreamAktif + "\nLevel: " + currentVolume + " / " + maxVolume);
         tvVolume.setTextSize(16);
         tvVolume.setGravity(Gravity.CENTER);
         layout.addView(tvVolume);
@@ -300,8 +399,8 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
                 if (fromUser) {
-                    audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, progress, 0);
-                    tvVolume.setText("Level Volume Media: " + progress + " / " + maxVolume);
+                    audioManager.setStreamVolume(selectedAudioStream, progress, 0);
+                    tvVolume.setText(namaStreamAktif + "\nLevel: " + progress + " / " + maxVolume);
                 }
             }
             @Override public void onStartTrackingTouch(SeekBar seekBar) {}
@@ -311,7 +410,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Atur Volume Suara");
+        builder.setTitle("Atur " + namaStreamAktif);
         builder.setView(layout);
         builder.setPositiveButton("Tutup", new DialogInterface.OnClickListener() {
             @Override
@@ -348,8 +447,15 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private void ucapkanSuara(String teks) {
         if (isTtsReady && tts != null) {
             try {
-                tts.speak(teks, TextToSpeech.QUEUE_FLUSH, null, null);
-            } catch (Exception e) {}
+                // Menggunakan parameter STREAM yang dipilih untuk pembacaan TTS jika didukung engine
+                Bundle params = new Bundle();
+                params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, selectedAudioStream);
+                tts.speak(teks, TextToSpeech.QUEUE_FLUSH, params, null);
+            } catch (Exception e) {
+                try {
+                    tts.speak(teks, TextToSpeech.QUEUE_FLUSH, null, null);
+                } catch (Exception ex) {}
+            }
         }
     }
 
@@ -374,12 +480,28 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     }
 
     private void simpanLokasiSaatIni() {
-        if (!isLocationSaved) {
+        if (!isLocationSaved && savedLat == 0.0) {
+            Location loc = null;
+            try {
+                if (locationManager != null) {
+                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                }
+            } catch (Exception e) {}
+            
+            if (loc != null) {
+                savedLat = loc.getLatitude();
+                savedLon = loc.getLongitude();
+                isLocationSaved = true;
+                ucapkanSuara("Lokasi berhasil disimpan.");
+                info.setText("Lokasi Tersimpan!\nLat: " + savedLat + "\nLon: " + savedLon);
+                return;
+            }
+
             ucapkanSuara("Tekan tombol Di Mana Saya Sekarang terlebih dahulu.");
             info.setText("Belum ada titik akurat!");
             return;
         }
-        ucapkanSuara("Lokasi berhasil disimpan.");
+        ucapkanSuara("Lokasi sudah tersimpan.");
         info.setText("Lokasi Tersimpan!\nLat: " + savedLat + "\nLon: " + savedLon);
     }
 
@@ -396,7 +518,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         ucapkanSuara("Mengunduh rute belokan...");
         info.setText("Menghitung rute perjalanan...");
         
-        // Memulai pengambilan jalur rute dari layanan terbuka secara latar belakang
         Location loc = null;
         try {
             loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
@@ -408,7 +529,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         new AmbilRuteTask().execute(startLat, startLon, savedLat, savedLon);
     }
 
-    // Tugas latar belakang untuk mengambil data petunjuk arah jalan (Turn-by-Turn)
     private class AmbilRuteTask extends AsyncTask<Double, Void, List<InstruksiRute>> {
         @Override
         protected List<InstruksiRute> doInBackground(Double... coords) {
@@ -419,7 +539,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 double eLat = coords[2];
                 double eLon = coords[3];
 
-                // Menggunakan OSRM public routing engine untuk mendapatkan instruksi belokan jalan nyata
                 String urlStr = "https://router.project-osrm.org/route/v1/walking/" + sLon + "," + sLat + ";" + eLon + "," + eLat + "?overview=false&steps=true&geometries=geojson&language=id";
                 URL url = new URL(urlStr);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -463,7 +582,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 ucapkanSuara("Rute belokan siap. Navigasi dimulai.");
                 info.setText("Navigasi Belokan Aktif (" + daftarInstruksi.size() + " titik instruksi)");
             } else {
-                // Fallback jika gagal mengambil rute online, gunakan panduan garis lurus
                 daftarInstruksi.add(new InstruksiRute(savedLat, savedLon, "Tuju titik akhir tujuan."));
                 mulaiMendengarkanGPS();
                 ucapkanSuara("Navigasi garis lurus dimulai.");
@@ -494,21 +612,18 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             }
 
             if (isNavigating) {
-                // Periksa instruksi belokan aktif
                 if (!daftarInstruksi.isEmpty() && indexInstruksiAktif < daftarInstruksi.size()) {
                     InstruksiRute instruksi = daftarInstruksi.get(indexInstruksiAktif);
                     
                     float[] hasilJarak = new float[1];
                     Location.distanceBetween(currentLat, currentLon, instruksi.lat, instruksi.lon, hasilJarak);
-                    float jarakKeBelokan = hasilJarak[0];
+                    float jarakKeBelokan = hasilJolarak = hasilJarak[0]; // (atau hasilJarak[0])
 
-                    // Berikan peringatan 20 meter sebelum titik belokan/langkah
                     if (jarakKeBelokan <= 20.0f && !instruksi.sudahDiumumkan) {
                         ucapkanSuara("20 meter lagi, " + instruksi.pesanPanduan);
                         instruksi.sudahDiumumkan = true;
                     }
 
-                    // Jika sudah melewati titik instruksi (< 4 meter), pindah ke instruksi berikutnya
                     if (jarakKeBelokan <= 4.0f) {
                         indexInstruksiAktif++;
                         if (indexInstruksiAktif < daftarInstruksi.size()) {
