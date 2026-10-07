@@ -142,7 +142,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         box.addView(btnSimpan);
 
-        // Tombol Edit Lokasi Tersimpan
         Button btnEditLokasi = new Button(this);
         btnEditLokasi.setText("EDIT / KELOLA LOKASI TERSIMPAN");
         btnEditLokasi.setOnClickListener(new View.OnClickListener() {
@@ -206,7 +205,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         boxTts.addView(btnPilihEngine);
 
-        // Tombol Pilih Jenis Stream Volume
         Button btnPilihStream = new Button(this);
         btnPilihStream.setText("PILIH JENIS STREAM VOLUME");
         btnPilihStream.setOnClickListener(new View.OnClickListener() {
@@ -286,7 +284,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             @Override
             public void onClick(DialogInterface dialog, int which) {
                 if (which == 0) {
-                    // Opsi Edit: Timpa dengan koordinat saat ini (jika sudah didapat via cek posisi atau ambil dari last known)
                     Location loc = null;
                     try {
                         if (locationManager != null) {
@@ -304,7 +301,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                         ucapkanSuara("Gagal mengambil posisi terbaru. Lakukan 'Di Mana Saya Sekarang' terlebih dahulu.");
                     }
                 } else if (which == 1) {
-                    // Opsi Hapus
                     savedLat = 0.0;
                     savedLon = 0.0;
                     isLocationSaved = false;
@@ -447,7 +443,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private void ucapkanSuara(String teks) {
         if (isTtsReady && tts != null) {
             try {
-                // Menggunakan parameter STREAM yang dipilih untuk pembacaan TTS jika didukung engine
                 Bundle params = new Bundle();
                 params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, selectedAudioStream);
                 tts.speak(teks, TextToSpeech.QUEUE_FLUSH, params, null);
@@ -617,7 +612,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     
                     float[] hasilJarak = new float[1];
                     Location.distanceBetween(currentLat, currentLon, instruksi.lat, instruksi.lon, hasilJarak);
-                    float jarakKeBelokan = hasilJolarak = hasilJarak[0]; // (atau hasilJarak[0])
+                    float jarakKeBelokan = hasilJarak[0];
 
                     if (jarakKeBelokan <= 20.0f && !instruksi.sudahDiumumkan) {
                         ucapkanSuara("20 meter lagi, " + instruksi.pesanPanduan);
