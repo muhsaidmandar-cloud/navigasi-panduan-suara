@@ -5,12 +5,11 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.graphics.Color;
@@ -20,6 +19,14 @@ import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.SeekBar;
 import android.widget.TextView;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -34,19 +41,33 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     // Pengaturan Suara & TTS
     private float kecepatanBicara = 1.0f; 
     private float nadaBicara = 1.0f;     
-
-    private String targetTtsEngine = null; // null = Default sistem
+    private String targetTtsEngine = null; 
     private String namaEngineAktif = "Default Sistem";
 
-    // Penyimpanan Lokasi
+    // Penyimpanan Lokasi & Rute Belokan
     private double savedLat = 0.0;
     private double savedLon = 0.0;
     private boolean isLocationSaved = false;
     private boolean isNavigating = false;
     private boolean sedangMencariPosisiSekarang = false;
 
-    private boolean sudahPeringatan20m = false;
-    private boolean sudahTiba = false;
+    // Daftar instruksi belokan hasilunduhan rute
+    private List<InstruksiRute> daftarInstruksi = new ArrayList<>();
+    private int indexInstruksiAktif = 0;
+
+    // Kelas bantu untuk menyimpan data instruksi belokan
+    private static class InstruksiRute {
+        double lat;
+        double lon;
+        String pesanPanduan;
+        boolean sudahDiumumkan = false;
+
+        public InstruksiRute(double lat, double lon, String pesanPanduan) {
+            this.lat = lat;
+            this.lon = lon;
+            this.pesanPanduan = pesanPanduan;
+        }
+    }
 
     @Override 
     public void onCreate(Bundle state) {
@@ -62,7 +83,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 tts.shutdown();
             } catch (Exception e) {}
         }
-        
         try {
             if (targetTtsEngine != null && !targetTtsEngine.isEmpty()) {
                 tts = new TextToSpeech(this, this, targetTtsEngine);
@@ -81,7 +101,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         box.setPadding(32, 32, 32, 32);
         
         TextView title = new TextView(this);
-        title.setText("Navigasi Panduan Suara");
+        title.setText("Navigasi Panduan Belokan");
         title.setTextSize(22);
         title.setTextColor(Color.BLACK);
         title.setGravity(Gravity.CENTER);
@@ -115,7 +135,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         box.addView(btnSimpan);
 
         Button btnNavigasi = new Button(this);
-        btnNavigasi.setText("MULAI NAVIGASI KE LOKASI TERSIMPAN");
+        btnNavigasi.setText("MULAI NAVIGASI BELOKAN");
         btnNavigasi.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -184,9 +204,8 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         boxTts.addView(btnLebihCepat);
 
-        // Tombol Volume dengan Dialog Slider Interaktif
         Button btnAturVolume = new Button(this);
-        btnAturVolume.setText("ATUR VOLUME MEDIA / ALARM");
+        btnAturVolume.setText("ATUR VOLUME MEDIA");
         btnAturVolume.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -224,25 +243,20 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             final List<String> namaEngineList = new ArrayList<>();
             final List<String> packageEngineList = new ArrayList<>();
 
-            // Tambahkan opsi default sistem
             namaEngineList.add("Default Sistem");
             packageEngineList.add(null);
 
-            // Ambil daftar engine menggunakan TTS instance yang mendeteksi engine sistem
             if (tts != null) {
-                try {
-                    List<TextToSpeech.EngineInfo> engines = tts.getEngines();
-                    if (engines != null) {
-                        for (TextToSpeech.EngineInfo engine : engines) {
-                            namaEngineList.add(engine.label);
-                            packageEngineList.add(engine.name);
-                        }
+                List<TextToSpeech.EngineInfo> engines = tts.getEngines();
+                if (engines != null) {
+                    for (TextToSpeech.EngineInfo engine : engines) {
+                        namaEngineList.add(engine.label);
+                        packageEngineList.add(engine.name);
                     }
-                } catch (Exception e) {}
+                }
             }
 
             CharSequence[] items = namaEngineList.toArray(new CharSequence[0]);
-
             AlertDialog.Builder builder = new AlertDialog.Builder(this);
             builder.setTitle("Pilih Mesin TTS");
             builder.setItems(items, new DialogInterface.OnClickListener() {
@@ -250,7 +264,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 public void onClick(DialogInterface dialog, int which) {
                     targetTtsEngine = packageEngineList.get(which);
                     namaEngineAktif = namaEngineList.get(which);
-                    
                     inisialisasiTtsMandiri();
                     infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x");
                     ucapkanSuara("Berhasil beralih ke " + namaEngineAktif);
@@ -262,7 +275,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         }
     }
 
-    // Dialog Pengatur Volume Mandiri
     private void tampilkanDialogVolume() {
         final AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         final int maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
@@ -378,11 +390,86 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             return;
         }
         isNavigating = true;
-        sudahPeringatan20m = false;
-        sudahTiba = false;
-        mulaiMendengarkanGPS();
-        ucapkanSuara("Navigasi dimulai.");
-        info.setText("Navigasi aktif menuju lokasi tersimpan...");
+        indexInstruksiAktif = 0;
+        daftarInstruksi.clear();
+        
+        ucapkanSuara("Mengunduh rute belokan...");
+        info.setText("Menghitung rute perjalanan...");
+        
+        // Memulai pengambilan jalur rute dari layanan terbuka secara latar belakang
+        Location loc = null;
+        try {
+            loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+        } catch (Exception e) {}
+
+        double startLat = (loc != null) ? loc.getLatitude() : savedLat - 0.001;
+        double startLon = (loc != null) ? loc.getLongitude() : savedLon - 0.001;
+
+        new AmbilRuteTask().execute(startLat, startLon, savedLat, savedLon);
+    }
+
+    // Tugas latar belakang untuk mengambil data petunjuk arah jalan (Turn-by-Turn)
+    private class AmbilRuteTask extends AsyncTask<Double, Void, List<InstruksiRute>> {
+        @Override
+        protected List<InstruksiRute> doInBackground(Double... coords) {
+            List<InstruksiRute> hasil = new ArrayList<>();
+            try {
+                double sLat = coords[0];
+                double sLon = coords[1];
+                double eLat = coords[2];
+                double eLon = coords[3];
+
+                // Menggunakan OSRM public routing engine untuk mendapatkan instruksi belokan jalan nyata
+                String urlStr = "https://router.project-osrm.org/route/v1/walking/" + sLon + "," + sLat + ";" + eLon + "," + eLat + "?overview=false&steps=true&geometries=geojson&language=id";
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                reader.close();
+
+                JSONObject json = new JSONObject(sb.toString());
+                JSONArray routes = json.getJSONArray("routes");
+                if (routes.length() > 0) {
+                    JSONObject route = routes.getJSONObject(0);
+                    JSONArray legs = route.getJSONArray("legs");
+                    if (legs.length() > 0) {
+                        JSONArray steps = legs.getJSONObject(0).getJSONArray("steps");
+                        for (int i = 0; i < steps.length(); i++) {
+                            JSONObject step = steps.getJSONObject(i);
+                            String maneuver = step.getJSONObject("maneuver").getString("instruction");
+                            JSONArray locArr = step.getJSONObject("maneuver").getJSONArray("location");
+                            double stepLon = locArr.getDouble(0);
+                            double stepLat = locArr.getDouble(1);
+                            
+                            hasil.add(new InstruksiRute(stepLat, stepLon, maneuver));
+                        }
+                    }
+                }
+            } catch (Exception e) {}
+            return hasil;
+        }
+
+        @Override
+        protected void onPostExecute(List<InstruksiRute> result) {
+            if (result != null && !result.isEmpty()) {
+                daftarInstruksi = result;
+                mulaiMendengarkanGPS();
+                ucapkanSuara("Rute belokan siap. Navigasi dimulai.");
+                info.setText("Navigasi Belokan Aktif (" + daftarInstruksi.size() + " titik instruksi)");
+            } else {
+                // Fallback jika gagal mengambil rute online, gunakan panduan garis lurus
+                daftarInstruksi.add(new InstruksiRute(savedLat, savedLon, "Tuju titik akhir tujuan."));
+                mulaiMendengarkanGPS();
+                ucapkanSuara("Navigasi garis lurus dimulai.");
+                info.setText("Navigasi Titik Aktif");
+            }
+        }
     }
 
     @Override
@@ -406,28 +493,36 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 return;
             }
 
-            if (akurasi <= 10.0f) {
-                if (isNavigating) {
+            if (isNavigating) {
+                // Periksa instruksi belokan aktif
+                if (!daftarInstruksi.isEmpty() && indexInstruksiAktif < daftarInstruksi.size()) {
+                    InstruksiRute instruksi = daftarInstruksi.get(indexInstruksiAktif);
+                    
                     float[] hasilJarak = new float[1];
-                    Location.distanceBetween(currentLat, currentLon, savedLat, savedLon, hasilJarak);
-                    float jarak = hasilJarak[0];
+                    Location.distanceBetween(currentLat, currentLon, instruksi.lat, instruksi.lon, hasilJarak);
+                    float jarakKeBelokan = hasilJarak[0];
 
-                    if (jarak <= 20.0f && jarak > 2.0f && !sudahPeringatan20m) {
-                        ucapkanSuara("20 meter lagi mendekati tujuan.");
-                        sudahPeringatan20m = true;
+                    // Berikan peringatan 20 meter sebelum titik belokan/langkah
+                    if (jarakKeBelokan <= 20.0f && !instruksi.sudahDiumumkan) {
+                        ucapkanSuara("20 meter lagi, " + instruksi.pesanPanduan);
+                        instruksi.sudahDiumumkan = true;
                     }
 
-                    if (jarak <= 2.0f && !sudahTiba) {
-                        ucapkanSuara("Anda telah tiba di tujuan.");
-                        info.setText("Tiba di tujuan!");
-                        sudahTiba = true;
-                        isNavigating = false; 
-                    } else if (!sudahTiba) {
-                        info.setText("Navigasi GPS Murni\nAkurasi: ± " + (int)akurasi + " m\nJarak: " + (int)jarak + " m");
+                    // Jika sudah melewati titik instruksi (< 4 meter), pindah ke instruksi berikutnya
+                    if (jarakKeBelokan <= 4.0f) {
+                        indexInstruksiAktif++;
+                        if (indexInstruksiAktif < daftarInstruksi.size()) {
+                            InstruksiRute nextInstruksi = daftarInstruksi.get(indexInstruksiAktif);
+                            ucapkanSuara(nextInstruksi.pesanPanduan);
+                        } else {
+                            ucapkanSuara("Anda telah tiba di tujuan.");
+                            info.setText("Tiba di tujuan!");
+                            isNavigating = false;
+                        }
+                    } else {
+                        info.setText("Panduan Belokan:\n" + instruksi.pesanPanduan + "\nJarak: " + (int)jarakKeBelokan + " m");
                     }
                 }
-            } else {
-                info.setText("Menunggu sinyal satelit...\nAkurasi: ± " + akurasi + " m");
             }
         }
     }
