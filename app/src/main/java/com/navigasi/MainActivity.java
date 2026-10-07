@@ -22,13 +22,14 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private TextToSpeech tts;
     private boolean isTtsReady = false;
 
-    // Variabel untuk menyimpan lokasi favorit (Titik Karet/Tujuan)
+    // Variabel penyimpanan lokasi (Titik Karet/Tujuan)
     private double savedLat = 0.0;
     private double savedLon = 0.0;
     private boolean isLocationSaved = false;
     private boolean isNavigating = false;
+    private boolean sedangMencariPosisiSekarang = false;
 
-    // Status pemicu suara agar tidak terulang-ulang terus menerus
+    // Status pemicu suara navigasi
     private boolean sudahPeringatan20m = false;
     private boolean sudahTitikBelok = false;
     private boolean sudahTiba = false;
@@ -58,7 +59,18 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         info.setPadding(0, 16, 0, 24);
         box.addView(info);
         
-        // Tombol 1: Simpan Lokasi Saat Ini
+        // Tombol Baru: Cek Posisi Saat Ini (Akurasi ketat <= 3 meter)
+        Button btnCekPosisi = new Button(this);
+        btnCekPosisi.setText("DI MANA SAYA SEKARANG");
+        btnCekPosisi.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                cekPosisiSekarangAkurat();
+            }
+        });
+        box.addView(btnCekPosisi);
+
+        // Tombol: Simpan Lokasi Saat Ini
         Button btnSimpan = new Button(this);
         btnSimpan.setText("SIMPAN LOKASI SAAT INI");
         btnSimpan.setOnClickListener(new View.OnClickListener() {
@@ -69,7 +81,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         box.addView(btnSimpan);
 
-        // Tombol 2: Mulai Navigasi ke Lokasi Tersimpan
+        // Tombol: Mulai Navigasi ke Lokasi Tersimpan
         Button btnNavigasi = new Button(this);
         btnNavigasi.setText("MULAI NAVIGASI KE LOKASI TERSIMPAN");
         btnNavigasi.setOnClickListener(new View.OnClickListener() {
@@ -104,24 +116,37 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                // Murni menggunakan satelit GPS (GPS_PROVIDER) tanpa network provider
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER, 
-                    1000, // Update tiap 1 detik
-                    0.5f, // Jarak minimal 0.5 meter
+                    1000,, 
+                    0.5f, 
                     this
                 );
             } else {
-                ucapkanSuara("GPS belum aktif. Mohon aktifkan GPS.");
+                ucapkanSuara("GPS belum aktif. Mohon aktifkan GPS perangkat.");
             }
         } catch (SecurityException e) {
             ucapkanSuara("Izin lokasi ditolak.");
         }
     }
 
-    private void simpanLokasiSaatIni() {
+    private void cekPosisiSekarangAkurat() {
+        sedangMencariPosisiSekarang = true;
         mulaiMendengarkanGPS();
-        info.setText("Mencari titik GPS murni untuk disimpan...");
-        ucapkanSuara("Mencari titik akurat untuk disimpan.");
+        ucapkanSuara("Mencari posisi Anda dengan akurasi tinggi, mohon tunggu sebentar di luar ruangan.");
+        info.setText("Mencari posisi (menunggu akurasi <= 3 meter)...");
+    }
+
+    private void simpanLokasiSaatIni() {
+        if (!isLocationSaved) {
+            // Jika belum ada lokasi acuan, gunakan posisi terakhir yang valid
+            ucapkanSuara("Silakan tekan tombol Di Mana Saya Sekarang terlebih dahulu untuk mengunci titik akurat sebelum menyimpan.");
+            info.setText("Tekan 'Di Mana Saya Sekarang' dulu!");
+            return;
+        }
+        ucapkanSuara("Lokasi berhasil dikunci dan disimpan.");
+        info.setText("Lokasi Tersimpan Permanen!\nLat: " + savedLat + "\nLon: " + savedLon);
     }
 
     private void mulaiNavigasiTersimpan() {
@@ -148,43 +173,44 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             double currentLon = location.getLongitude();
             float akurasi = location.getAccuracy();
             
-            // Saring ketat akurasi GPS di bawah 10 meter agar stabil
-            if (akurasi <= 10.0f) {
-                
-                // Jika tombol simpan ditekan dan lokasi belum terkunci permanen
-                if (!isLocationSaved && !isNavigating) {
+            // FITUR 1: Cek Posisi Saat Ini dengan Akurasi Ketat (<= 3 Meter)
+            if (sedangMencariPosisiSekarang) {
+                if (akurasi <= 3.0f) {
                     savedLat = currentLat;
                     savedLon = currentLon;
                     isLocationSaved = true;
-                    ucapkanSuara("Lokasi berhasil disimpan.");
-                    info.setText("Lokasi Tersimpan!\nLat: " + savedLat + "\nLon: " + savedLon);
-                    return;
+                    sedangMencariPosisiSekarang = false;
+                    
+                    String pesanPosisi = "Anda berada di koordinat akurat. Akurasi 3 meter.";
+                    ucapkanSuara(pesanPosisi);
+                    info.setText("Posisi Anda Saat Ini:\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m (Sangat Akurat)");
+                } else {
+                    info.setText("Menyaring sinyal satelit...\nAkurasi saat ini: ± " + akurasi + " m (Target <= 3m)");
                 }
+                return;
+            }
 
-                // Jika sedang dalam mode navigasi menuju lokasi tersimpan
+            // Filter umum GPS stabil di bawah 10 meter untuk proses navigasi
+            if (akurasi <= 10.0f) {
+                
+                // FITUR 2 & 3: Mode Navigasi Menuju Lokasi Tersimpan
                 if (isNavigating) {
                     float[] hasilJarak = new float[1];
                     Location.distanceBetween(currentLat, currentLon, savedLat, savedLon, hasilJarak);
                     float jarak = hasilJarak[0];
 
-                    // 1. Peringatan 20 Meter Sebelum Belok/Tujuan
-                    if (jarak <= 20.0f && jarak > 5.0f && !sudahPeringatan20m) {
-                        ucapkanSuara("Perhatian, 20 meter lagi bersiap belok.");
+                    // Peringatan 20 Meter Sebelum Tujuan/Belok
+                    if (jarak <= 20.0f && jarak > 2.0f && !sudahPeringatan20m) {
+                        ucapkanSuara("Perhatian, 20 meter lagi mendekati titik tujuan.");
                         sudahPeringatan20m = true;
                     }
 
-                    // 2. Instruksi Tepat di Titik Belok (sekitar 3-5 meter)
-                    if (jarak <= 5.0f && jarak > 2.0f && !sudahTitikBelok) {
-                        ucapkanSuara("Belok sekarang.");
-                        sudahTitikBelok = true;
-                    }
-
-                    // 3. Tiba di Tujuan (Sangat presisi: 1 sampai 2 meter)
+                    // Tiba di Tujuan (Sangat presisi: 1 sampai 2 meter)
                     if (jarak <= 2.0f && !sudahTiba) {
                         ucapkanSuara("Anda telah tiba di tujuan.");
                         info.setText("Anda telah tiba di tujuan!");
                         sudahTiba = true;
-                        isNavigating = false; // Matikan navigasi setelah tiba
+                        isNavigating = false; // Hentikan navigasi otomatis
                     } else if (!sudahTiba) {
                         info.setText("Navigasi Aktif\n" +
                                      "Akurasi GPS: ± " + (int)akurasi + " m\n" +
