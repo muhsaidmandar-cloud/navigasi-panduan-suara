@@ -29,9 +29,8 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private float nadaBicara = 1.0f;     
     private int levelVolume = 5; 
 
-    // Pilihan Paket Mesin TTS Khusus Aplikasi Ini (Contoh: Google TTS = "com.google.android.tts")
-    // Dengan ini, aplikasi tidak akan mencampuri mesin pembaca layar utama.
-    private String targetTtsEngine = "com.google.android.tts"; 
+    private String targetTtsEngine = null; // null = Default sistem lokal aplikasi
+    private String namaEngineAktif = "Default Sistem";
 
     // Penyimpanan Lokasi
     private double savedLat = 0.0;
@@ -40,7 +39,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private boolean isNavigating = false;
     private boolean sedangMencariPosisiSekarang = false;
 
-    // Status pemicu suara
     private boolean sudahPeringatan20m = false;
     private boolean sudahTiba = false;
 
@@ -59,12 +57,13 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             } catch (Exception e) {}
         }
         
-        // Memaksa TextToSpeech menggunakan engine mandiri khusus aplikasi ini 
-        // tanpa mengubah setelan global sistem atau pembaca layar.
         try {
-            tts = new TextToSpeech(this, this, targetTtsEngine);
+            if (targetTtsEngine != null) {
+                tts = new TextToSpeech(this, this, targetTtsEngine);
+            } else {
+                tts = new TextToSpeech(this, this);
+            }
         } catch (Exception e) {
-            // Fallback jika engine pilihan tidak ada di perangkat
             tts = new TextToSpeech(this, this);
         }
     }
@@ -100,7 +99,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         box.addView(btnCekPosisi);
 
         Button btnSimpan = new Button(this);
-        btnSimpan.setText("SIMPAN LOKASI SAAT ISINI");
+        btnSimpan.setText("SIMPAN LOKASI SAAT INI");
         btnSimpan.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -146,39 +145,56 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         boxTts.addView(titleTts);
 
         final TextView infoTts = new TextView(this);
-        infoTts.setText("Engine Khusus: Google TTS\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
+        infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
         infoTts.setTextSize(15);
         infoTts.setGravity(Gravity.CENTER);
         infoTts.setPadding(0, 24, 0, 24);
         boxTts.addView(infoTts);
 
-        // Tombol mengganti engine khusus aplikasi ini ke bawaan sistem (tanpa mengganggu pembaca layar)
-        Button btnGantiKeDefault = new Button(this);
-        btnGantiKeDefault.setText("GUNAKAN TTS DEFAULT SISTEM");
-        btnGantiKeDefault.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                targetTtsEngine = null; // null berarti pakai default sistem secara lokal
-                inisialisasiTtsMandiri();
-                infoTts.setText("Engine Khusus: Default Sistem\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
-                ucapkanSuara("Beralih ke suara default sistem.");
-            }
-        });
-        boxTts.addView(btnGantiKeDefault);
-
-        // Tombol mengganti engine khusus aplikasi ini ke Google TTS
-        Button btnGantiKeGoogle = new Button(this);
-        btnGantiKeGoogle.setText("GUNAKAN GOOGLE TTS KHUSUS");
-        btnGantiKeGoogle.setOnClickListener(new View.OnClickListener() {
+        // Tombol 1: Menggunakan Google TTS
+        Button btnGoogle = new Button(this);
+        btnGoogle.setText("GUNAKAN GOOGLE TTS");
+        btnGoogle.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 targetTtsEngine = "com.google.android.tts";
+                namaEngineAktif = "Google TTS";
                 inisialisasiTtsMandiri();
-                infoTts.setText("Engine Khusus: Google TTS\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
-                ucapkanSuara("Beralih ke Google TTS.");
+                infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
+                ucapkanSuara("Menggunakan Google TTS.");
             }
         });
-        boxTts.addView(btnGantiKeGoogle);
+        boxTts.addView(btnGoogle);
+
+        // Tombol 2: Menggunakan Vocalizer Ex2 (Paket standar Vocalizer)
+        Button btnVocalizer = new Button(this);
+        btnVocalizer.setText("GUNAKAN VOCALIZER EX2");
+        btnVocalizer.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                targetTtsEngine = "es.codefactory.vocalizer.en.eFIGS"; 
+                namaEngineAktif = "Vocalizer Ex2";
+                inisialisasiTtsMandiri();
+                infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
+                ucapkanSuara("Menggunakan Vocalizer Ex2.");
+            }
+        });
+        boxTts.addView(btnVocalizer);
+
+        // Tombol 3: Menggunakan Default Sistem (Aman untuk pembaca layar lokal)
+        Button btnDefault = new Button(this);
+        btnDefault.setText("GUNAKAN DEFAULT SISTEM");
+        btnDefault.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                targetTtsEngine = null;
+                namaEngineAktif = "Default Sistem";
+                inisialisasiTtsMandiri();
+                infoTts.setText("Engine Aktif: " + namaEngineAktif + "\nKecepatan: " + kecepatanBicara + "x | Volume: " + levelVolume);
+                ucapkanSuara("Menggunakan default sistem.");
+            }
+        });
+        boxTts.addView(btnDefault);
 
         Button btnLebihCepat = new Button(this);
         btnLebihCepat.setText("UBAH KECEPATAN BICARA");
@@ -191,7 +207,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     kecepatanBicara = 1.0f; 
                 }
                 terapkanSetelanTts();
-                ucapkanSuara("Kecepatan suara diatur ke " + kecepatanBicara);
+                ucapkanSuara("Kecepatan diatur ke " + kecepatanBicara);
             }
         });
         boxTts.addView(btnLebihCepat);
@@ -218,7 +234,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         btnUjiSuara.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                ucapkanSuara("Uji coba suara navigasi mandiri.");
+                ucapkanSuara("Uji coba suara navigasi aktif.");
             }
         });
         boxTts.addView(btnUjiSuara);
@@ -234,7 +250,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         boxTts.addView(btnKembali);
 
         setContentView(boxTts);
-        ucapkanSuara("Menu pengaturan suara mandiri dibuka.");
+        ucapkanSuara("Pengaturan suara dibuka.");
     }
 
     private void terapkanSetelanTts() {
@@ -254,7 +270,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
                     isTtsReady = true;
                     terapkanSetelanTts();
-                    ucapkanSuara("Suara navigasi mandiri siap.");
+                    ucapkanSuara("Suara siap.");
                 }
             } catch (Exception e) {}
         }
