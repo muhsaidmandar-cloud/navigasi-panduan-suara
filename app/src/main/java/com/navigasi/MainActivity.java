@@ -59,7 +59,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         info.setPadding(0, 16, 0, 24);
         box.addView(info);
         
-        // Tombol Baru: Cek Posisi Saat Ini (Akurasi ketat <= 3 meter)
+        // Tombol 1: Cek Posisi Saat Ini (Akurasi ketat <= 3 meter)
         Button btnCekPosisi = new Button(this);
         btnCekPosisi.setText("DI MANA SAYA SEKARANG");
         btnCekPosisi.setOnClickListener(new View.OnClickListener() {
@@ -70,7 +70,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         box.addView(btnCekPosisi);
 
-        // Tombol: Simpan Lokasi Saat Ini
+        // Tombol 2: Simpan Lokasi Saat Ini
         Button btnSimpan = new Button(this);
         btnSimpan.setText("SIMPAN LOKASI SAAT INI");
         btnSimpan.setOnClickListener(new View.OnClickListener() {
@@ -81,7 +81,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         box.addView(btnSimpan);
 
-        // Tombol: Mulai Navigasi ke Lokasi Tersimpan
+        // Tombol 3: Mulai Navigasi ke Lokasi Tersimpan
         Button btnNavigasi = new Button(this);
         btnNavigasi.setText("MULAI NAVIGASI KE LOKASI TERSIMPAN");
         btnNavigasi.setOnClickListener(new View.OnClickListener() {
@@ -119,7 +119,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 // Murni menggunakan satelit GPS (GPS_PROVIDER) tanpa network provider
                 locationManager.requestLocationUpdates(
                     LocationManager.GPS_PROVIDER, 
-                    1000,, 
+                    1000, 
                     0.5f, 
                     this
                 );
@@ -140,7 +140,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
 
     private void simpanLokasiSaatIni() {
         if (!isLocationSaved) {
-            // Jika belum ada lokasi acuan, gunakan posisi terakhir yang valid
             ucapkanSuara("Silakan tekan tombol Di Mana Saya Sekarang terlebih dahulu untuk mengunci titik akurat sebelum menyimpan.");
             info.setText("Tekan 'Di Mana Saya Sekarang' dulu!");
             return;
