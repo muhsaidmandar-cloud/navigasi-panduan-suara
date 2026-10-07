@@ -140,7 +140,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         box.addView(btnCekPosisi);
 
-        // --- FITUR BARU: CARI LOKASI TUJUAN & SIMPAN ---
+        // --- FITUR PENCARIAN LOKASI TUJUAN ---
         Button btnCariLokasi = new Button(this);
         btnCariLokasi.setText("CARI LOKASI TUJUAN (TEKS)");
         btnCariLokasi.setOnClickListener(new View.OnClickListener() {
@@ -224,7 +224,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         }
     }
 
-    // --- DIALOG PENCARIAN LOKASI BERBASIS TEKS ---
     private void tampilkanDialogPencarianLokasi() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Cari Lokasi Tujuan");
@@ -252,7 +251,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         ucapkanSuara("Silakan ketik nama lokasi yang ingin dituju.");
     }
 
-    // Background Task untuk Pencarian Geocoding Nominatim OpenStreetMap
     private class CariLokasiTask extends AsyncTask<String, Void, HasilPencarian> {
         @Override
         protected HasilPencarian doInBackground(String... params) {
@@ -292,10 +290,9 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 savedLon = hasil.lon;
                 isLocationSaved = true;
 
-                ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek() + ". Berhasil disimpan sebagai tujuan navigasi.");
+                ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek() + ". Berhasil disimpan.");
                 info.setText("Lokasi Ditemukan & Disimpan!\n" + hasil.displayName);
                 
-                // Tanyakan konfirmasi apakah ingin langsung navigasi
                 AlertDialog.Builder konfirmasi = new AlertDialog.Builder(MainActivity.this);
                 konfirmasi.setTitle("Lokasi Tersimpan Akurat");
                 konfirmasi.setMessage("Hasil Ditemukan:\n" + hasil.displayName + "\n\nApakah Anda ingin langsung memulai Navigasi ke tempat ini?");
@@ -333,7 +330,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         }
     }
 
-    // --- FITUR PENGATURAN SUARA, KELOLA LOKASI, DAN NAVIGASI (SAMA SEBELUMNYA) ---
     private void tampilkanHalamanPengaturanTts() {
         LinearLayout boxTts = new LinearLayout(this);
         boxTts.setOrientation(LinearLayout.VERTICAL);
@@ -454,7 +450,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                         savedLat = loc.getLatitude();
                         savedLon = loc.getLongitude();
                         isLocationSaved = true;
-                        ucapkanSuara("Lokasi berhasil diperbarui dengan posisi terbaru.");
+                        ucapkanSuara("Lokasi berhasil diperbarui.");
                         info.setText("Lokasi Diperbarui!\nLat: " + savedLat + "\nLon: " + savedLon);
                     } else {
                         ucapkanSuara("Gagal mengambil posisi terbaru.");
@@ -470,7 +466,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         });
         builder.setNegativeButton("Batal", null);
         builder.show();
-        ucapkanSuara("Menu kelola lokasi dibuka.");
     }
 
     private void tampilkanDialogPilihanStream(final TextView infoTts) {
@@ -515,254 +510,4 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             builder.setTitle("Pilih Mesin TTS");
             builder.setItems(items, new DialogInterface.OnClickListener() {
                 @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    targetTtsEngine = packageEngineList.get(which);
-                    namaEngineAktif = namaEngineList.get(which);
-                    inisialisasiTtsMandiri();
-                    infoTts.setText("Engine: " + namaEngineAktif + "\nStream: " + namaStreamAktif + "\nKecepatan: " + kecepatanBicara + "x");
-                    ucapkanSuara("Berhasil beralih ke " + namaEngineAktif);
-                }
-            });
-            builder.show();
-        } catch (Exception e) {
-            ucapkanSuara("Gagal memuat daftar TTS.");
-        }
-    }
-
-    private void tampilkanDialogVolume() {
-        final AudioManager audioManager = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
-        final int maxVolume = audioManager.getStreamMaxVolume(selectedAudioStream);
-        final int currentVolume = audioManager.getStreamVolume(selectedAudioStream);
-
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(40, 40, 40, 40);
-
-        final TextView tvVolume = new TextView(this);
-        tvVolume.setText(namaStreamAktif + "\nLevel: " + currentVolume + " / " + maxVolume);
-        tvVolume.setTextSize(16);
-        tvVolume.setGravity(Gravity.CENTER);
-        layout.addView(tvVolume);
-
-        final SeekBar seekBar = new SeekBar(this);
-        seekBar.setMax(maxVolume);
-        seekBar.setProgress(currentVolume);
-        seekBar.setPadding(20, 40, 20, 20);
-        layout.addView(seekBar);
-
-        seekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                if (fromUser) {
-                    audioManager.setStreamVolume(selectedAudioStream, progress, 0);
-                    tvVolume.setText(namaStreamAktif + "\nLevel: " + progress + " / " + maxVolume);
-                }
-            }
-            @Override public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override public void onStopTrackingTouch(SeekBar seekBar) {
-                ucapkanSuara("Volume diatur.");
-            }
-        });
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Atur " + namaStreamAktif);
-        builder.setView(layout);
-        builder.setPositiveButton("Tutup", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                dialog.dismiss();
-            }
-        });
-        builder.show();
-    }
-
-    private void terapkanSetelanTts() {
-        if (tts != null) {
-            try {
-                tts.setSpeechRate(kecepatanBicara);
-                tts.setPitch(nadaBicara);
-            } catch (Exception e) {}
-        }
-    }
-
-    @Override
-    public void onInit(int status) {
-        if (status == TextToSpeech.SUCCESS) {
-            try {
-                int result = tts.setLanguage(new Locale("id", "ID"));
-                if (result != TextToSpeech.LANG_MISSING_DATA && result != TextToSpeech.LANG_NOT_SUPPORTED) {
-                    isTtsReady = true;
-                    terapkanSetelanTts();
-                    ucapkanSuara("Suara siap.");
-                }
-            } catch (Exception e) {}
-        }
-    }
-
-    private void ucapkanSuara(String teks) {
-        if (isTtsReady && tts != null) {
-            try {
-                Bundle params = new Bundle();
-                params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, selectedAudioStream);
-                tts.speak(teks, TextToSpeech.QUEUE_FLUSH, params, null);
-            } catch (Exception e) {
-                try {
-                    tts.speak(teks, TextToSpeech.QUEUE_FLUSH, null, null);
-                } catch (Exception ex) {}
-            }
-        }
-    }
-
-    private void mulaiMendengarkanGPS() {
-        try {
-            locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000, 2.0f, this);
-            } else {
-                ucapkanSuara("GPS belum aktif.");
-            }
-        } catch (SecurityException e) {
-            ucapkanSuara("Izin lokasi ditolak.");
-        }
-    }
-
-    private void cekPosisiSekarangAkurat() {
-        sedangMencariPosisiSekarang = true;
-        sedangMemindaiOtomatis = false;
-        mulaiMendengarkanGPS();
-        ucapkanSuara("Mencari posisi akurat.");
-        info.setText("Mencari posisi (Target akurasi <= 3 meter)...");
-    }
-
-    private class EksplorasiRealtimeTask extends AsyncTask<Double, Void, List<String>> {
-        @Override
-        protected List<String> doInBackground(Double... coords) {
-            List<String> hasilTempat = new ArrayList<>();
-            try {
-                double lat = coords[0];
-                double lon = coords[1];
-                String query = "[out:json];(node(around:40," + lat + "," + lon + ")[amenity];way(around:40," + lat + "," + lon + ")[amenity];);out body 4;";
-                String urlStr = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8");
-                
-                URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line);
-                }
-                reader.close();
-
-                JSONObject json = new JSONObject(sb.toString());
-                JSONArray elements = json.getJSONArray("elements");
-                
-                for (int i = 0; i < elements.length(); i++) {
-                    JSONObject el = elements.getJSONObject(i);
-                    if (el.has("tags")) {
-                        JSONObject tags = el.getJSONObject("tags");
-                        if (tags.has("name")) {
-                            hasilTempat.add(tags.getString("name"));
-                        }
-                    }
-                }
-            } catch (Exception e) {}
-            return hasilTempat;
-        }
-
-        @Override
-        protected void onPostExecute(List<String> result) {
-            sedangMemindaiOtomatis = false;
-            if (result != null && !result.isEmpty()) {
-                StringBuilder speechText = new StringBuilder("Sekitar Anda: ");
-                for (int i = 0; i < result.size(); i++) {
-                    speechText.append(result.get(i)).append(". ");
-                }
-                ucapkanSuara(speechText.toString());
-                info.setText("Eksplorasi Real-Time Aktif:\n" + speechText.toString());
-            }
-        }
-    }
-
-    private void simpanLokasiSaatIni() {
-        if (!isLocationSaved && savedLat == 0.0) {
-            Location loc = null;
-            try {
-                if (locationManager != null) {
-                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                }
-            } catch (Exception e) {}
-            
-            if (loc != null) {
-                savedLat = loc.getLatitude();
-                savedLon = loc.getLongitude();
-                isLocationSaved = true;
-                ucapkanSuara("Lokasi berhasil disimpan.");
-                info.setText("Lokasi Tersimpan!\nLat: " + savedLat + "\nLon: " + savedLon);
-                return;
-            }
-            ucapkanSuara("Tekan tombol Di Mana Saya Sekarang terlebih dahulu.");
-            return;
-        }
-        ucapkanSuara("Lokasi sudah tersimpan.");
-    }
-
-    private void mulaiNavigasiTersimpan() {
-        if (!isLocationSaved) {
-            ucapkanSuara("Belum ada lokasi tersimpan.");
-            info.setText("Belum ada lokasi!");
-            return;
-        }
-        isNavigating = true;
-        indexInstruksiAktif = 0;
-        daftarInstruksi.clear();
-        
-        ucapkanSuara("Mengunduh rute belokan...");
-        info.setText("Menghitung rute perjalanan...");
-        
-        Location loc = null;
-        try {
-            loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-        } catch (Exception e) {}
-
-        double startLat = (loc != null) ? loc.getLatitude() : savedLat - 0.001;
-        double startLon = (loc != null) ? loc.getLongitude() : savedLon - 0.001;
-
-        new AmbilRuteTask().execute(startLat, startLon, savedLat, savedLon);
-    }
-
-    private class AmbilRuteTask extends AsyncTask<Double, Void, List<InstruksiRute>> {
-        @Override
-        protected List<InstruksiRute> doInBackground(Double... coords) {
-            List<InstruksiRute> hasil = new ArrayList<>();
-            try {
-                double sLat = coords[0];
-                double sLon = coords[1];
-                double eLat = coords[2];
-                double eLon = coords[3];
-
-                String urlStr = "https://router.project-osrm.org/route/v1/walking/" + sLon + "," + sLat + ";" + eLon + "," + eLat + "?overview=false&steps=true&geometries=geojson&language=id";
-                URL url = new URL(urlStr);
-                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("GET");
-                
-                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
-                StringBuilder sb = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    sb.append(line);
-                }
-                reader.close();
-
-                JSONObject json = new JSONObject(sb.toString());
-                JSONArray routes = json.getJSONArray("routes");
-                if (routes.length() > 0) {
-                    JSONObject route = routes.getJSONObject(0);
-                    JSONArray legs = route.getJSONArray("legs");
-                    if (legs.length() > 0) {
-                        JSONArray steps = legs.getJSONObject(0).getJSONArray("steps");
-                        for (int i = 0; i < steps.length(); i++) {
-                            JSONObject step = steps.getJSONObject(i);
-                            String maneuver = step.getJSONObject("maneuver").getString
+                public void onClick(DialogInterface dialog
