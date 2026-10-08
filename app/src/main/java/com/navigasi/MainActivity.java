@@ -368,7 +368,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek() + ". Apakah Anda ingin menyimpannya?");
                 info.setText("Lokasi Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n" + infoJarakDetail));
                 
-                // Dialog pilihan interaktif (Tidak otomatis disimpan)
                 AlertDialog.Builder konfirmasi = new AlertDialog.Builder(MainActivity.this);
                 konfirmasi.setTitle("Hasil Pencarian Lokasi");
                 konfirmasi.setMessage("Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n\n" + infoJarakDetail) + "\n\nApa yang ingin Anda lakukan dengan lokasi ini?");
@@ -909,4 +908,93 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             double currentLon = location.getLongitude();
             float akurasi = location.getAccuracy();
             
-            if (sedangMenc
+            if (sedangMencariPosisiSekarang) {
+                if (akurasi <= 3.0f) {
+                    sedangMencariPosisiSekarang = false;
+                    ucapkanSuara("Posisi terkunci akurat.");
+                    info.setText("Posisi Akurat:\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m");
+                } else {
+                    info.setText("Menyaring sinyal GPS...\nAkurasi: ± " + akurasi + " meter (Target <= 3m)");
+                }
+                return;
+            }
+
+            if (isEksplorasiFiturAktif && !isNavigating && !sedangMemindaiOtomatis) {
+                float[] jarakPindah = new float[1];
+                if (lastExplorationLat == 0.0 && lastExplorationLon == 0.0) {
+                    lastExplorationLat = currentLat;
+                    lastExplorationLon = currentLon;
+                }
+                
+                Location.distanceBetween(lastExplorationLat, lastExplorationLon, currentLat, currentLon, jarakPindah);
+                
+                if (jarakPindah[0] >= 30.0f) {
+                    lastExplorationLat = currentLat;
+                    lastExplorationLon = currentLon;
+                    sedangMemindaiOtomatis = true;
+                    new EksplorasiRealtimeTask().execute(currentLat, currentLon);
+                }
+            }
+
+            if (isNavigating && lokasiNavigasiAktif != null) {
+                float[] jarakTotalArr = new float[1];
+                Location.distanceBetween(currentLat, currentLon, lokasiNavigasiAktif.lat, lokasiNavigasiAktif.lon, jarakTotalArr);
+                float jarakTotalMeter = jarakTotalArr[0];
+                
+                String teksJarakTotal = "";
+                if (jarakTotalMeter >= 1000) {
+                    teksJarakTotal = String.format(Locale.getDefault(), "Sisa Jarak Total: %.2f km", (jarakTotalMeter / 1000.0f));
+                } else {
+                    teksJarakTotal = String.format(Locale.getDefault(), "Sisa Jarak Total: %d m", (int) jarakTotalMeter);
+                }
+
+                if (!daftarInstruksi.isEmpty() && indexInstruksiAktif < daftarInstruksi.size()) {
+                    InstruksiRute instruksi = daftarInstruksi.get(indexInstruksiAktif);
+                    
+                    float[] hasilJarak = new float[1];
+                    Location.distanceBetween(currentLat, currentLon, instruksi.lat, instruksi.lon, hasilJarak);
+                    float jarakKeBelokan = hasilJarak[0];
+
+                    if (jarakKeBelokan <= 20.0f && !instruksi.sudahDiumumkan) {
+                        ucapkanSuara("20 meter lagi, " + instruksi.pesanPanduan);
+                        instruksi.sudahDiumumkan = true;
+                    }
+
+                    if (jarakKeBelokan <= 4.0f) {
+                        indexInstruksiAktif++;
+                        if (indexInstruksiAktif < daftarInstruksi.size()) {
+                            InstruksiRute nextInstruksi = daftarInstruksi.get(indexInstruksiAktif);
+                            ucapkanSuara(nextInstruksi.pesanPanduan);
+                        } else {
+                            ucapkanSuara("Anda telah tiba di tujuan.");
+                            info.setText("Tiba di tujuan: " + lokasiNavigasiAktif.nama);
+                            isNavigating = false;
+                        }
+                    } else {
+                        info.setText("Tujuan: " + lokasiNavigasiAktif.nama + "\nPanduan:\n" + instruksi.pesanPanduan + "\nJarak Belokan: " + (int)jarakKeBelokan + " m\n" + teksJarakTotal);
+                    }
+                } else {
+                    info.setText("Navigasi ke " + lokasiNavigasiAktif.nama + "\n" + teksJarakTotal);
+                }
+            }
+        }
+    }
+
+    @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
+    @Override public void onProviderEnabled(String provider) {}
+    @Override public void onProviderDisabled(String provider) { ucapkanSuara("GPS dimatikan."); }
+
+    @Override
+    protected void onDestroy() {
+        if (tts != null) {
+            try {
+                tts.stop();
+                tts.shutdown();
+            } catch (Exception e) {}
+        }
+        if (locationManager != null) {
+            locationManager.removeUpdates(this);
+        }
+        super.onDestroy();
+    }
+}
