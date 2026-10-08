@@ -57,7 +57,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private boolean isNavigating = false;
     private boolean sedangMencariPosisiSekarang = false;
     
-    // Status Pengaktifan Fitur Eksplorasi Real-Time (Gaya Lazarillo)
+    // Status Pengaktifan Fitur Eksplorasi Real-Time (Gaya Lazarillo: Scan Radius 25m, Update tiap pindah 15m)
     private boolean isEksplorasiFiturAktif = false;
     private boolean sedangMemindaiOtomatis = false;
     private double lastExplorationLat = 0.0;
@@ -371,18 +371,33 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     }
                 } catch (Exception e) {}
 
-                // Menyebutkan nama tempat dan jaraknya via TTS
-                ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek() + "." + teksUcapanJarak + " Disimpan ke daftar.");
+                // Menyebutkan nama tempat dan jaraknya via TTS (tanpa menyimpan otomatis)
+                ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek() + "." + teksUcapanJarak + " Pilih opsi untuk menyimpan atau bernavigasi.");
                 info.setText("Lokasi Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n" + infoJarakDetail));
                 
-                // Langsung simpan ke penyimpanan lokasi (tidak langsung navigasi)
-                daftarLokasiTersimpan.add(new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon));
-                simpanDataLokasiKePrefs();
-
                 AlertDialog.Builder konfirmasi = new AlertDialog.Builder(MainActivity.this);
                 konfirmasi.setTitle("Hasil Pencarian Lokasi");
-                konfirmasi.setMessage("Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n\n" + infoJarakDetail) + "\n\nLokasi telah berhasil disimpan ke daftar tersimpan.");
-                konfirmasi.setPositiveButton("Tutup", null);
+                konfirmasi.setMessage("Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n\n" + infoJarakDetail) + "\n\nApa yang ingin Anda lakukan dengan lokasi ini?");
+                
+                konfirmasi.setPositiveButton("Simpan ke Daftar", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        daftarLokasiTersimpan.add(new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon));
+                        simpanDataLokasiKePrefs();
+                        ucapkanSuara("Lokasi berhasil disimpan ke daftar.");
+                        info.setText("Lokasi Tersimpan:\n" + hasil.namaPendek());
+                    }
+                });
+
+                konfirmasi.setNeutralButton("Langsung Navigasi", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        lokasiNavigasiAktif = new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon);
+                        mulaiNavigasiTersimpan();
+                    }
+                });
+
+                konfirmasi.setNegativeButton("Abaikan", null);
                 konfirmasi.show();
             } else {
                 ucapkanSuara("Maaf, lokasi tidak ditemukan. Coba ketik nama yang lebih spesifik.");
@@ -762,26 +777,43 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         }
     }
 
+    // --- TOMBOL DI MANA SAYA SEKARANG (Validasi Ketat: Tolak Ruangan / Cache Lama) ---
     private void cekPosisiSekarangAkurat() {
-        sedangMencariPosisiSekarang = true;
-        sedangMemindaiOtomatis = false;
+        Location loc = null;
         try {
             if (locationManager != null) {
-                locationManager.removeUpdates(this);
-                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 1.0f, this);
-                    ucapkanSuara("Mencari sinyal satelit murni. Mohon tunggu di luar ruangan.");
-                    info.setText("Mencari posisi satelit (Target akurasi <= 3 meter)...");
-                } else {
-                    ucapkanSuara("GPS tidak aktif.");
+                if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    ucapkanSuara("GPS belum aktif. Aktifkan GPS terlebih dahulu.");
+                    info.setText("Gagal: GPS tidak aktif.");
+                    return;
                 }
+                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             }
-        } catch (SecurityException e) {
-            ucapkanSuara("Izin lokasi ditolak.");
+        } catch (Exception e) {}
+
+        // Validasi ketat: Tolak jika data null atau umur data lebih dari 10 detik (indikasi data basi/indoor)
+        if (loc == null || (System.currentTimeMillis() - loc.getTime() > 10000)) {
+            ucapkanSuara("Sinyal satelit tidak valid. Pastikan Anda berada di luar ruangan dan terhalang langsung ke langit.");
+            info.setText("Gagal mengunci: Tidak ada sinyal satelit baru atau Anda berada di dalam ruangan.");
+            return;
         }
+
+        float akurasi = loc.getAccuracy();
+        // Validasi ketat: Harus <= 3 meter (sinyal satelit murni di luar ruangan)
+        if (akurasi > 3.0f) {
+            ucapkanSuara("Sinyal GPS lemah atau terhalang. Akurasi saat ini plus minus " + (int)akurasi + " meter. Pindah ke tempat terbuka.");
+            info.setText("Gagal mengunci: Akurasi buruk (± " + (int)akurasi + " m). Target harus <= 3 meter.");
+            return;
+        }
+
+        // Jika lolos validasi murni di luar ruangan
+        double currentLat = loc.getLatitude();
+        double currentLon = loc.getLongitude();
+        ucapkanSuara("Posisi terkunci akurat.");
+        info.setText("Posisi Akurat:\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m");
     }
 
-    // --- FITUR EKSPLORASI REAL-TIME (GAYA LAZARILLO: Scan Radius 25 Meter & Pembaruan Setiap Berpindah 15 Meter) ---
+    // --- FITUR EKSPLORASI REAL-TIME (Gaya Lazarillo: Radius 25m, Update tiap pindah 15m) ---
     private class EksplorasiRealtimeTask extends AsyncTask<Double, Void, List<String>> {
         @Override
         protected List<String> doInBackground(Double... coords) {
@@ -789,7 +821,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             try {
                 double lat = coords[0];
                 double lon = coords[1];
-                // Radius diperkecil ke 25 meter agar akurat secara real-time seperti Lazarillo
                 String query = "[out:json];(node(around:25," + lat + "," + lon + ")[amenity];way(around:25," + lat + "," + lon + ")[amenity];node(around:25," + lat + "," + lon + ")[shop];);out body 5;";
                 String urlStr = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8");
                 
@@ -929,19 +960,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         if (location != null) {
             double currentLat = location.getLatitude();
             double currentLon = location.getLongitude();
-            float akurasi = location.getAccuracy();
             
-            if (sedangMencariPosisiSekarang) {
-                if (akurasi <= 3.0f) {
-                    sedangMencariPosisiSekarang = false;
-                    ucapkanSuara("Posisi terkunci akurat.");
-                    info.setText("Posisi Akurat:\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m");
-                } else {
-                    info.setText("Menyaring sinyal GPS...\nAkurasi: ± " + akurasi + " meter (Target <= 3m)");
-                }
-                return;
-            }
-
             // Eksplorasi Real-Time Gaya Lazarillo (Trigger saat berpindah minimal 15 meter)
             if (isEksplorasiFiturAktif && !isNavigating && !sedangMemindaiOtomatis) {
                 float[] jarakPindah = new float[1];
