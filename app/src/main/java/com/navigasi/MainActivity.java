@@ -371,7 +371,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     }
                 } catch (Exception e) {}
 
-                // Menyebutkan nama tempat dan jaraknya via TTS (tanpa menyimpan otomatis)
+                // Menyebutkan nama tempat beserta jaraknya via TTS dan menampilkan pilihan dialog
                 ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek() + "." + teksUcapanJarak + " Pilih opsi untuk menyimpan atau bernavigasi.");
                 info.setText("Lokasi Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n" + infoJarakDetail));
                 
