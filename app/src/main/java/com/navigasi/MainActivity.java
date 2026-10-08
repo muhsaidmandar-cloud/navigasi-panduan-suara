@@ -1,4 +1,4 @@
-package com.navigasi;
+Package com.navigasi;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -352,7 +352,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             if (hasil != null) {
                 String infoJarakDetail = "";
                 try {
-                    Location lastLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                    Location lastLoc = null;
+                    if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                        lastLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                    }
                     if (lastLoc != null) {
                         float[] results = new float[1];
                         Location.distanceBetween(lastLoc.getLatitude(), lastLoc.getLongitude(), hasil.lat, hasil.lon, results);
@@ -419,21 +422,37 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         }
     }
 
+    // --- VALIDASI KETAT: MENCEGAH DATA CACHE LAMA / RUANGAN TERTUTUP ---
     private void tampilkanDialogSimpanLokasiCustom(final String defaultNama) {
         Location loc = null;
         try {
             if (locationManager != null) {
+                if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    ucapkanSuara("GPS belum aktif. Aktifkan GPS terlebih dahulu.");
+                    info.setText("Gagal: GPS tidak aktif.");
+                    return;
+                }
                 loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             }
         } catch (Exception e) {}
 
-        if (loc == null) {
-            ucapkanSuara("Belum mendapatkan koordinat GPS saat ini. Pastikan GPS aktif.");
+        // Validasi: Tolak jika data null, atau umur data lebih dari 10 detik (indikasi data basi/indoor)
+        if (loc == null || (System.currentTimeMillis() - loc.getTime() > 10000)) {
+            ucapkanSuara("Sinyal satelit tidak valid. Pastikan Anda berada di luar ruangan dan GPS aktif.");
+            info.setText("Gagal menyimpan: Tidak ada sinyal satelit baru atau Anda berada di dalam ruangan.");
             return;
         }
 
         final double currentLat = loc.getLatitude();
         final double currentLon = loc.getLongitude();
+        float akurasi = loc.getAccuracy();
+
+        // Validasi: Tolak jika akurasi buruk (> 20 meter)
+        if (akurasi > 20.0f) {
+            ucapkanSuara("Sinyal GPS terlalu lemah atau berada di dalam ruangan.");
+            info.setText("Gagal menyimpan: Akurasi buruk (± " + (int)akurasi + " m). Pindah ke luar ruangan.");
+            return;
+        }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Simpan Lokasi Baru");
@@ -748,6 +767,7 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                // Meminta update satelit murni secara berkala
                 locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000, 2.0f, this);
             } else {
                 ucapkanSuara("GPS belum aktif.");
@@ -760,9 +780,20 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private void cekPosisiSekarangAkurat() {
         sedangMencariPosisiSekarang = true;
         sedangMemindaiOtomatis = false;
-        mulaiMendengarkanGPS();
-        ucapkanSuara("Mencari posisi akurat.");
-        info.setText("Mencari posisi (Target akurasi <= 3 meter)...");
+        try {
+            if (locationManager != null) {
+                locationManager.removeUpdates(this);
+                if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 1.0f, this);
+                    ucapkanSuara("Mencari sinyal satelit murni. Mohon tunggu di luar ruangan.");
+                    info.setText("Mencari posisi satelit (Target akurasi <= 3 meter)...");
+                } else {
+                    ucapkanSuara("GPS tidak aktif.");
+                }
+            }
+        } catch (SecurityException e) {
+            ucapkanSuara("Izin lokasi ditolak.");
+        }
     }
 
     private class EksplorasiRealtimeTask extends AsyncTask<Double, Void, List<String>> {
@@ -832,7 +863,9 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         
         Location loc = null;
         try {
-            loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            }
         } catch (Exception e) {}
 
         double startLat = (loc != null) ? loc.getLatitude() : lokasiNavigasiAktif.lat - 0.001;
