@@ -1,4 +1,4 @@
-Package com.navigasi;
+package com.navigasi;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -767,7 +767,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                // Meminta update satelit murni secara berkala
                 locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 3000, 2.0f, this);
             } else {
                 ucapkanSuara("GPS belum aktif.");
