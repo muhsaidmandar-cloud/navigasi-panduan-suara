@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.SharedPreferences;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -49,10 +50,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     private int selectedAudioStream = AudioManager.STREAM_MUSIC;
     private String namaStreamAktif = "Media / Musik";
 
-    // Penyimpanan Lokasi & Rute Belokan
-    private double savedLat = 0.0;
-    private double savedLon = 0.0;
-    private boolean isLocationSaved = false;
+    // Penyimpanan Multi-Lokasi
+    private List<LokasiTersimpan> daftarLokasiTersimpan = new ArrayList<>();
+    private LokasiTersimpan lokasiNavigasiAktif = null;
+    
     private boolean isNavigating = false;
     private boolean sedangMencariPosisiSekarang = false;
     
@@ -65,6 +66,19 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     // Daftar instruksi belokan hasil unduhan rute
     private List<InstruksiRute> daftarInstruksi = new ArrayList<>();
     private int indexInstruksiAktif = 0;
+
+    // Struktur Data Lokasi Tersimpan
+    public static class LokasiTersimpan {
+        String nama;
+        double lat;
+        double lon;
+
+        public LokasiTersimpan(String nama, double lat, double lon) {
+            this.nama = nama;
+            this.lat = lat;
+            this.lon = lon;
+        }
+    }
 
     private static class InstruksiRute {
         double lat;
@@ -83,8 +97,35 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
     public void onCreate(Bundle state) {
         super.onCreate(state);
         setVolumeControlStream(selectedAudioStream);
+        muatDataLokasiDariPrefs();
         inisialisasiTtsMandiri();
         tampilkanMenuUtama();
+    }
+
+    // --- MANAJEMEN PENYIMPANAN PREFERENCES (MULTI-LOKASI) ---
+    private void muatDataLokasiDariPrefs() {
+        daftarLokasiTersimpan.clear();
+        SharedPreferences prefs = getSharedPreferences("NavigasiPrefs", MODE_PRIVATE);
+        int jumlah = prefs.getInt("jumlah_lokasi", 0);
+        for (int i = 0; i < jumlah; i++) {
+            String nama = prefs.getString("nama_" + i, "Lokasi " + (i + 1));
+            double lat = Double.longBitsToDouble(prefs.getLong("lat_" + i, 0));
+            double lon = Double.longBitsToDouble(prefs.getLong("lon_" + i, 0));
+            daftarLokasiTersimpan.add(new LokasiTersimpan(nama, lat, lon));
+        }
+    }
+
+    private void simpanDataLokasiKePrefs() {
+        SharedPreferences prefs = getSharedPreferences("NavigasiPrefs", MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.putInt("jumlah_lokasi", daftarLokasiTersimpan.size());
+        for (int i = 0; i < daftarLokasiTersimpan.size(); i++) {
+            LokasiTersimpan loc = daftarLokasiTersimpan.get(i);
+            editor.putString("nama_" + i, loc.nama);
+            editor.putLong("lat_" + i, Double.doubleToRawLongBits(loc.lat));
+            editor.putLong("lon_" + i, Double.doubleToRawLongBits(loc.lon));
+        }
+        editor.apply();
     }
 
     private void inisialisasiTtsMandiri() {
@@ -119,10 +160,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         box.addView(title);
         
         info = new TextView(this);
-        if (isLocationSaved) {
-            info.setText("Lokasi Tersimpan:\nLat: " + savedLat + ", Lon: " + savedLon);
+        if (lokasiNavigasiAktif != null) {
+            info.setText("Tujuan Aktif:\n" + lokasiNavigasiAktif.nama + "\nLat: " + lokasiNavigasiAktif.lat + ", Lon: " + lokasiNavigasiAktif.lon);
         } else {
-            info.setText("Tekan tombol di bawah untuk mulai.");
+            info.setText("Total Lokasi Tersimpan: " + daftarLokasiTersimpan.size() + "\nTekan tombol di bawah untuk mulai.");
         }
         info.setTextSize(15);
         info.setGravity(Gravity.CENTER);
@@ -175,18 +216,18 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         btnSimpan.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                simpanLokasiSaatIni();
+                tampilkanDialogSimpanLokasiCustom("Lokasi Saya " + (daftarLokasiTersimpan.size() + 1));
             }
         });
         box.addView(btnSimpan);
 
         // --- FITUR KELOLA LOKASI ---
         Button btnEditLokasi = new Button(this);
-        btnEditLokasi.setText("KELOLA LOKASI TERSIMPAN");
+        btnEditLokasi.setText("KELOLA LOKASI TERSIMPAN (" + daftarLokasiTersimpan.size() + ")");
         btnEditLokasi.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                tampilkanDialogKelolaLokasi();
+                tampilkanDialogKelolaDaftarLokasi();
             }
         });
         box.addView(btnEditLokasi);
@@ -232,10 +273,10 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         daftarInstruksi.clear();
         indexInstruksiAktif = 0;
         ucapkanSuara("Navigasi dihentikan.");
-        if (isLocationSaved) {
-            info.setText("Navigasi Berhenti.\nLokasi Tersimpan:\nLat: " + savedLat + ", Lon: " + savedLon);
+        if (lokasiNavigasiAktif != null) {
+            info.setText("Navigasi Berhenti.\nTujuan Aktif: " + lokasiNavigasiAktif.nama);
         } else {
-            info.setText("Navigasi Berhenti. Tidak ada lokasi tersimpan.");
+            info.setText("Navigasi Berhenti. Belum ada tujuan dipilih.");
         }
     }
 
@@ -307,18 +348,14 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         }
 
         @Override
-        protected void onPostExecute(HasilPencarian hasil) {
+        protected void onPostExecute(final HasilPencarian hasil) {
             if (hasil != null) {
-                savedLat = hasil.lat;
-                savedLon = hasil.lon;
-                isLocationSaved = true;
-
                 String infoJarakDetail = "";
                 try {
                     Location lastLoc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
                     if (lastLoc != null) {
                         float[] results = new float[1];
-                        Location.distanceBetween(lastLoc.getLatitude(), lastLoc.getLongitude(), savedLat, savedLon, results);
+                        Location.distanceBetween(lastLoc.getLatitude(), lastLoc.getLongitude(), hasil.lat, hasil.lon, results);
                         float jarakMeter = results[0];
                         if (jarakMeter >= 1000) {
                             infoJarakDetail = String.format(Locale.getDefault(), "Jarak garis lurus: %.2f km", (jarakMeter / 1000.0f));
@@ -328,19 +365,34 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                     }
                 } catch (Exception e) {}
 
-                ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek() + ". Berhasil disimpan." + infoJarakDetail);
-                info.setText("Lokasi Ditemukan & Disimpan!\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n" + infoJarakDetail));
+                ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek() + ". Apakah Anda ingin menyimpannya?");
+                info.setText("Lokasi Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n" + infoJarakDetail));
                 
+                // Dialog pilihan interaktif (Tidak otomatis disimpan)
                 AlertDialog.Builder konfirmasi = new AlertDialog.Builder(MainActivity.this);
-                konfirmasi.setTitle("Lokasi Tersimpan Akurat");
-                konfirmasi.setMessage("Hasil Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n\n" + infoJarakDetail) + "\n\nApakah Anda ingin langsung memulai Navigasi ke tempat ini?");
-                konfirmasi.setPositiveButton("Mulai Navigasi", new DialogInterface.OnClickListener() {
+                konfirmasi.setTitle("Hasil Pencarian Lokasi");
+                konfirmasi.setMessage("Ditemukan:\n" + hasil.displayName + (infoJarakDetail.isEmpty() ? "" : "\n\n" + infoJarakDetail) + "\n\nApa yang ingin Anda lakukan dengan lokasi ini?");
+                
+                konfirmasi.setPositiveButton("Simpan ke Daftar", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface d, int w) {
+                        daftarLokasiTersimpan.add(new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon));
+                        simpanDataLokasiKePrefs();
+                        lokasiNavigasiAktif = daftarLokasiTersimpan.get(daftarLokasiTersimpan.size() - 1);
+                        ucapkanSuara("Lokasi berhasil disimpan dan dijadikan tujuan aktif.");
+                        info.setText("Disimpan & Jadi Tujuan:\n" + lokasiNavigasiAktif.nama);
+                    }
+                });
+
+                konfirmasi.setNeutralButton("Langsung Navigasi", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int w) {
+                        lokasiNavigasiAktif = new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon);
                         mulaiNavigasiTersimpan();
                     }
                 });
-                konfirmasi.setNegativeButton("Tutup Saja", null);
+
+                konfirmasi.setNegativeButton("Abaikan", null);
                 konfirmasi.show();
             } else {
                 ucapkanSuara("Maaf, lokasi tidak ditemukan. Coba ketik nama yang lebih spesifik.");
@@ -366,6 +418,100 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             }
             return displayName;
         }
+    }
+
+    private void tampilkanDialogSimpanLokasiCustom(final String defaultNama) {
+        Location loc = null;
+        try {
+            if (locationManager != null) {
+                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            }
+        } catch (Exception e) {}
+
+        if (loc == null) {
+            ucapkanSuara("Belum mendapatkan koordinat GPS saat ini. Pastikan GPS aktif.");
+            return;
+        }
+
+        final double currentLat = loc.getLatitude();
+        final double currentLon = loc.getLongitude();
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Simpan Lokasi Baru");
+
+        final EditText input = new EditText(this);
+        input.setText(defaultNama);
+        input.setPadding(40, 30, 40, 30);
+        builder.setView(input);
+
+        builder.setPositiveButton("Simpan", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String namaLokasi = input.getText().toString().trim();
+                if (namaLokasi.isEmpty()) namaLokasi = "Lokasi Tersimpan";
+                
+                daftarLokasiTersimpan.add(new LokasiTersimpan(namaLokasi, currentLat, currentLon));
+                simpanDataLokasiKePrefs();
+                lokasiNavigasiAktif = daftarLokasiTersimpan.get(daftarLokasiTersimpan.size() - 1);
+                
+                ucapkanSuara("Lokasi " + namaLokasi + " berhasil disimpan.");
+                info.setText("Lokasi Tersimpan:\n" + namaLokasi + "\nLat: " + currentLat + ", Lon: " + currentLon);
+            }
+        });
+        builder.setNegativeButton("Batal", null);
+        builder.show();
+        ucapkanSuara("Masukkan nama untuk lokasi ini.");
+    }
+
+    private void tampilkanDialogKelolaDaftarLokasi() {
+        if (daftarLokasiTersimpan.isEmpty()) {
+            ucapkanSuara("Belum ada lokasi yang tersimpan.");
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("Kelola Lokasi");
+            builder.setMessage("Belum ada lokasi tersimpan di dalam aplikasi.");
+            builder.setPositiveButton("Tutup", null);
+            builder.show();
+            return;
+        }
+
+        final CharSequence[] daftarNama = new CharSequence[daftarLokasiTersimpan.size()];
+        for (int i = 0; i < daftarLokasiTersimpan.size(); i++) {
+            daftarNama[i] = (i + 1) + ". " + daftarLokasiTersimpan.get(i).nama + " (" + daftarLokasiTersimpan.get(i).lat + ", " + daftarLokasiTersimpan.get(i).lon + ")";
+        }
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Daftar Lokasi Tersimpan (" + daftarLokasiTersimpan.size() + ")");
+        builder.setItems(daftarNama, new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, final int pilihanIndex) {
+                final LokasiTersimpan dipilih = daftarLokasiTersimpan.get(pilihanIndex);
+                
+                AlertDialog.Builder opsiItem = new AlertDialog.Builder(MainActivity.this);
+                opsiItem.setTitle("Pilihan: " + dipilih.nama);
+                CharSequence[] aksi = {"Jadikan Tujuan Navigasi", "Hapus Lokasi Ini"};
+                opsiItem.setItems(aksi, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int a) {
+                        if (a == 0) {
+                            lokasiNavigasiAktif = dipilih;
+                            ucapkanSuara("Tujuan aktif diubah ke " + dipilih.nama);
+                            info.setText("Tujuan Aktif:\n" + dipilih.nama);
+                        } else if (a == 1) {
+                            daftarLokasiTersimpan.remove(pilihanIndex);
+                            simpanDataLokasiKePrefs();
+                            if (lokasiNavigasiAktif != null && lokasiNavigasiAktif.equals(dipilih)) {
+                                lokasiNavigasiAktif = null;
+                            }
+                            ucapkanSuara("Lokasi dihapus.");
+                            info.setText("Lokasi dihapus. Total tersimpan: " + daftarLokasiTersimpan.size());
+                        }
+                    }
+                });
+                opsiItem.show();
+            }
+        });
+        builder.setNegativeButton("Tutup", null);
+        builder.show();
     }
 
     private void tampilkanHalamanPengaturanTts() {
@@ -457,53 +603,6 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
 
         setContentView(boxTts);
         ucapkanSuara("Pengaturan suara dibuka.");
-    }
-
-    private void tampilkanDialogKelolaLokasi() {
-        if (!isLocationSaved) {
-            ucapkanSuara("Belum ada lokasi yang tersimpan.");
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("Kelola Lokasi");
-            builder.setMessage("Belum ada lokasi tersimpan saat ini.");
-            builder.setPositiveButton("Tutup", null);
-            builder.show();
-            return;
-        }
-
-        CharSequence[] opsi = {"Ganti dengan Lokasi Saat Ini", "Hapus Lokasi Tersimpan"};
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Kelola Lokasi Tersimpan\n(Lat: " + savedLat + ", Lon: " + savedLon + ")");
-        builder.setItems(opsi, new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                if (which == 0) {
-                    Location loc = null;
-                    try {
-                        if (locationManager != null) {
-                            loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                        }
-                    } catch (Exception e) {}
-
-                    if (loc != null) {
-                        savedLat = loc.getLatitude();
-                        savedLon = loc.getLongitude();
-                        isLocationSaved = true;
-                        ucapkanSuara("Lokasi berhasil diperbarui.");
-                        info.setText("Lokasi Diperbarui!\nLat: " + savedLat + "\nLon: " + savedLon);
-                    } else {
-                        ucapkanSuara("Gagal mengambil posisi terbaru.");
-                    }
-                } else if (which == 1) {
-                    savedLat = 0.0;
-                    savedLon = 0.0;
-                    isLocationSaved = false;
-                    ucapkanSuara("Lokasi tersimpan telah dihapus.");
-                    info.setText("Tidak ada lokasi tersimpan.");
-                }
-            }
-        });
-        builder.setNegativeButton("Batal", null);
-        builder.show();
     }
 
     private void tampilkanDialogPilihanStream(final TextView infoTts) {
@@ -719,51 +818,28 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
         }
     }
 
-    private void simpanLokasiSaatIni() {
-        if (!isLocationSaved && savedLat == 0.0) {
-            Location loc = null;
-            try {
-                if (locationManager != null) {
-                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                }
-            } catch (Exception e) {}
-            
-            if (loc != null) {
-                savedLat = loc.getLatitude();
-                savedLon = loc.getLongitude();
-                isLocationSaved = true;
-                ucapkanSuara("Lokasi berhasil disimpan.");
-                info.setText("Lokasi Tersimpan!\nLat: " + savedLat + "\nLon: " + savedLon);
-                return;
-            }
-            ucapkanSuara("Tekan tombol Di Mana Saya Sekarang terlebih dahulu.");
-            return;
-        }
-        ucapkanSuara("Lokasi sudah tersimpan.");
-    }
-
     private void mulaiNavigasiTersimpan() {
-        if (!isLocationSaved) {
-            ucapkanSuara("Belum ada lokasi tersimpan.");
-            info.setText("Belum ada lokasi!");
+        if (lokasiNavigasiAktif == null) {
+            ucapkanSuara("Belum ada tujuan navigasi yang dipilih.");
+            info.setText("Pilih atau tetapkan lokasi tujuan terlebih dahulu!");
             return;
         }
         isNavigating = true;
         indexInstruksiAktif = 0;
         daftarInstruksi.clear();
         
-        ucapkanSuara("Mengunduh rute belokan...");
-        info.setText("Menghitung rute perjalanan...");
+        ucapkanSuara("Mengunduh rute belokan ke " + lokasiNavigasiAktif.nama + "...");
+        info.setText("Menghitung rute ke: " + lokasiNavigasiAktif.nama);
         
         Location loc = null;
         try {
             loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
         } catch (Exception e) {}
 
-        double startLat = (loc != null) ? loc.getLatitude() : savedLat - 0.001;
-        double startLon = (loc != null) ? loc.getLongitude() : savedLon - 0.001;
+        double startLat = (loc != null) ? loc.getLatitude() : lokasiNavigasiAktif.lat - 0.001;
+        double startLon = (loc != null) ? loc.getLongitude() : lokasiNavigasiAktif.lon - 0.001;
 
-        new AmbilRuteTask().execute(startLat, startLon, savedLat, savedLon);
+        new AmbilRuteTask().execute(startLat, startLon, lokasiNavigasiAktif.lat, lokasiNavigasiAktif.lon);
     }
 
     private class AmbilRuteTask extends AsyncTask<Double, Void, List<InstruksiRute>> {
@@ -814,9 +890,11 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
                 daftarInstruksi = result;
                 mulaiMendengarkanGPS();
                 ucapkanSuara("Rute belokan siap. Navigasi dimulai.");
-                info.setText("Navigasi Belokan Aktif (" + daftarInstruksi.size() + " titik instruksi)");
+                info.setText("Navigasi ke " + lokasiNavigasiAktif.nama + " (" + daftarInstruksi.size() + " titik)");
             } else {
-                daftarInstruksi.add(new InstruksiRute(savedLat, savedLon, "Tuju titik akhir tujuan."));
+                if (lokasiNavigasiAktif != null) {
+                    daftarInstruksi.add(new InstruksiRute(lokasiNavigasiAktif.lat, lokasiNavigasiAktif.lon, "Tuju titik akhir tujuan."));
+                }
                 mulaiMendengarkanGPS();
                 ucapkanSuara("Navigasi garis lurus dimulai.");
                 info.setText("Navigasi Titik Aktif");
@@ -831,96 +909,4 @@ public class MainActivity extends Activity implements LocationListener, TextToSp
             double currentLon = location.getLongitude();
             float akurasi = location.getAccuracy();
             
-            if (sedangMencariPosisiSekarang) {
-                if (akurasi <= 3.0f) {
-                    savedLat = currentLat;
-                    savedLon = currentLon;
-                    isLocationSaved = true;
-                    sedangMencariPosisiSekarang = false;
-                    ucapkanSuara("Posisi terkunci akurat.");
-                    info.setText("Posisi Akurat:\nLat: " + currentLat + "\nLon: " + currentLon + "\nAkurasi: ± " + akurasi + " m");
-                } else {
-                    info.setText("Menyaring sinyal GPS...\nAkurasi: ± " + akurasi + " meter (Target <= 3m)");
-                }
-                return;
-            }
-
-            if (isEksplorasiFiturAktif && !isNavigating && !sedangMemindaiOtomatis) {
-                float[] jarakPindah = new float[1];
-                if (lastExplorationLat == 0.0 && lastExplorationLon == 0.0) {
-                    lastExplorationLat = currentLat;
-                    lastExplorationLon = currentLon;
-                }
-                
-                Location.distanceBetween(lastExplorationLat, lastExplorationLon, currentLat, currentLon, jarakPindah);
-                
-                if (jarakPindah[0] >= 30.0f) {
-                    lastExplorationLat = currentLat;
-                    lastExplorationLon = currentLon;
-                    sedangMemindaiOtomatis = true;
-                    new EksplorasiRealtimeTask().execute(currentLat, currentLon);
-                }
-            }
-
-            if (isNavigating) {
-                float[] jarakTotalArr = new float[1];
-                Location.distanceBetween(currentLat, currentLon, savedLat, savedLon, jarakTotalArr);
-                float jarakTotalMeter = jarakTotalArr[0];
-                
-                String teksJarakTotal = "";
-                if (jarakTotalMeter >= 1000) {
-                    teksJarakTotal = String.format(Locale.getDefault(), "Sisa Jarak Total: %.2f km", (jarakTotalMeter / 1000.0f));
-                } else {
-                    teksJarakTotal = String.format(Locale.getDefault(), "Sisa Jarak Total: %d m", (int) jarakTotalMeter);
-                }
-
-                if (!daftarInstruksi.isEmpty() && indexInstruksiAktif < daftarInstruksi.size()) {
-                    InstruksiRute instruksi = daftarInstruksi.get(indexInstruksiAktif);
-                    
-                    float[] hasilJarak = new float[1];
-                    Location.distanceBetween(currentLat, currentLon, instruksi.lat, instruksi.lon, hasilJarak);
-                    float jarakKeBelokan = hasilJarak[0];
-
-                    if (jarakKeBelokan <= 20.0f && !instruksi.sudahDiumumkan) {
-                        ucapkanSuara("20 meter lagi, " + instruksi.pesanPanduan);
-                        instruksi.sudahDiumumkan = true;
-                    }
-
-                    if (jarakKeBelokan <= 4.0f) {
-                        indexInstruksiAktif++;
-                        if (indexInstruksiAktif < daftarInstruksi.size()) {
-                            InstruksiRute nextInstruksi = daftarInstruksi.get(indexInstruksiAktif);
-                            ucapkanSuara(nextInstruksi.pesanPanduan);
-                        } else {
-                            ucapkanSuara("Anda telah tiba di tujuan.");
-                            info.setText("Tiba di tujuan!");
-                            isNavigating = false;
-                        }
-                    } else {
-                        info.setText("Panduan Belokan:\n" + instruksi.pesanPanduan + "\nJarak ke Belokan: " + (int)jarakKeBelokan + " m\n" + teksJarakTotal);
-                    }
-                } else {
-                    info.setText("Navigasi Aktif\n" + teksJarakTotal);
-                }
-            }
-        }
-    }
-
-    @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
-    @Override public void onProviderEnabled(String provider) {}
-    @Override public void onProviderDisabled(String provider) { ucapkanSuara("GPS dimatikan."); }
-
-    @Override
-    protected void onDestroy() {
-        if (tts != null) {
-            try {
-                tts.stop();
-                tts.shutdown();
-            } catch (Exception e) {}
-        }
-        if (locationManager != null) {
-            locationManager.removeUpdates(this);
-        }
-        super.onDestroy();
-    }
-}
+            if (sedangMenc
