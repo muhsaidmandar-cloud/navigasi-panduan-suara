@@ -1,4 +1,4 @@
-package com.navigasi;
+Package com.navigasi;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -436,7 +436,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             public void onClick(DialogInterface dialog, int which) {
                 String query = input.getText().toString().trim();
                 if (!query.isEmpty()) {
-                    // Ambil lokasi terakhir yang valid dari semua provider yang tersedia
                     Location loc = dapatkanLokasiTerakhir();
 
                     double currentLat = (loc != null) ? loc.getLatitude() : 0.0;
@@ -495,6 +494,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         @Override
         protected void onPostExecute(HasilPencarian hasil) {
             if (hasil != null) {
+                // Set sebagai tujuan aktif sementara (tanpa langsung menyimpannya ke daftar tersimpan)
                 lokasiNavigasiAktif = new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon);
                 
                 String pesanHasil;
@@ -505,7 +505,24 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
                 
                 ucapkanSuara(pesanHasil);
-                info.setText("Tujuan Dipilih:\n" + hasil.namaPendek() + "\nJarak: " + hasil.jarakMeter + " meter\nLat: " + hasil.lat + ", Lon: " + hasil.lon);
+                info.setText("Hasil Pencarian:\n" + hasil.namaPendek() + "\nJarak: " + hasil.jarakMeter + " meter\nLat: " + hasil.lat + ", Lon: " + hasil.lon);
+
+                // Tampilkan dialog pilihan apakah ingin menyimpan lokasi hasil pencarian ke daftar
+                AlertDialog.Builder saveBuilder = new AlertDialog.Builder(MainActivity.this);
+                saveBuilder.setTitle("Simpan Lokasi Ini?");
+                saveBuilder.setMessage("Apakah Anda ingin menyimpan \"" + hasil.namaPendek() + "\" ke daftar lokasi tersimpan?");
+                
+                saveBuilder.setPositiveButton("Simpan", new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        daftarLokasiTersimpan.add(new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon));
+                        simpanDataLokasiKePrefs();
+                        ucapkanSuara("Lokasi " + hasil.namaPendek() + " berhasil disimpan.");
+                    }
+                });
+                saveBuilder.setNegativeButton("Tidak", null);
+                saveBuilder.show();
+
             } else {
                 ucapkanSuara("Lokasi tidak ditemukan. Coba masukkan nama tempat dengan lebih spesifik.");
                 info.setText("Pencarian gagal.");
@@ -574,12 +591,70 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
 
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Daftar Lokasi");
+        builder.setTitle("Kelola Lokasi Tersimpan");
         builder.setItems(daftarNama, new DialogInterface.OnClickListener() {
             @Override
-            public void onClick(DialogInterface dialog, int index) {
-                lokasiNavigasiAktif = daftarLokasiTersimpan.get(index);
-                ucapkanSuara("Tujuan diubah ke " + lokasiNavigasiAktif.nama);
+            public void onClick(DialogInterface dialog, final int index) {
+                final LokasiTersimpan lokasiPilihan = daftarLokasiTersimpan.get(index);
+                
+                // Menampilkan sub-menu aksi untuk lokasi yang dipilih (Jadikan Tujuan, Edit, Hapus)
+                CharSequence[] opsiAksi = new CharSequence[]{"Jadikan Tujuan Navigasi", "Edit Nama Lokasi", "Hapus Lokasi"};
+                AlertDialog.Builder actionBuilder = new AlertDialog.Builder(MainActivity.this);
+                actionBuilder.setTitle("Pilih Aksi: " + lokasiPilihan.nama);
+                actionBuilder.setItems(opsiAksi, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface d, int aksiIndex) {
+                        if (aksiIndex == 0) {
+                            // Jadikan Tujuan
+                            lokasiNavigasiAktif = lokasiPilihan;
+                            ucapkanSuara("Tujuan diubah ke " + lokasiNavigasiAktif.nama);
+                            info.setText("Tujuan Aktif:\n" + lokasiNavigasiAktif.nama + "\nLat: " + lokasiNavigasiAktif.lat + ", Lon: " + lokasiNavigasiAktif.lon);
+                        } else if (aksiIndex == 1) {
+                            // Edit Nama Lokasi
+                            AlertDialog.Builder editBuilder = new AlertDialog.Builder(MainActivity.this);
+                            editBuilder.setTitle("Edit Nama Lokasi");
+                            final EditText inputEdit = new EditText(MainActivity.this);
+                            inputEdit.setText(lokasiPilihan.nama);
+                            inputEdit.setPadding(40, 30, 40, 30);
+                            editBuilder.setView(inputEdit);
+
+                            editBuilder.setPositiveButton("Simpan", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogEdit, int whichEdit) {
+                                    String namaBaru = inputEdit.getText().toString().trim();
+                                    if (!namaBaru.isEmpty()) {
+                                        lokasiPilihan.nama = namaBaru;
+                                        simpanDataLokasiKePrefs();
+                                        ucapkanSuara("Nama lokasi diubah menjadi " + namaBaru);
+                                    }
+                                }
+                            });
+                            editBuilder.setNegativeButton("Batal", null);
+                            editBuilder.show();
+
+                        } else if (aksiIndex == 2) {
+                            // Hapus Lokasi
+                            AlertDialog.Builder hapusBuilder = new AlertDialog.Builder(MainActivity.this);
+                            hapusBuilder.setTitle("Hapus Lokasi");
+                            hapusBuilder.setMessage("Apakah Anda yakin ingin menghapus \"" + lokasiPilihan.nama + "\"?");
+                            hapusBuilder.setPositiveButton("Ya", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogHapus, int whichHapus) {
+                                    if (lokasiNavigasiAktif == lokasiPilihan) {
+                                        lokasiNavigasiAktif = null;
+                                    }
+                                    daftarLokasiTersimpan.remove(index);
+                                    simpanDataLokasiKePrefs();
+                                    ucapkanSuara("Lokasi dihapus.");
+                                    info.setText("Total Lokasi Tersimpan: " + daftarLokasiTersimpan.size() + "\nSistem Sensor Pro Siap.");
+                                }
+                            });
+                            hapusBuilder.setNegativeButton("Batal", null);
+                            hapusBuilder.show();
+                        }
+                    }
+                });
+                actionBuilder.show();
             }
         });
         builder.show();
