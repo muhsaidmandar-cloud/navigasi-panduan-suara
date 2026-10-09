@@ -271,7 +271,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     
                     try {
                         if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                            Location loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                            Location loc = dapatkanLokasiTerakhir();
                             if (loc != null) {
                                 float initialSpeed = loc.hasSpeed() ? loc.getSpeed() : 0.0f;
                                 float initialHeading = (initialSpeed > 3.0f && loc.hasBearing()) ? loc.getBearing() : currentAzimuth;
@@ -356,46 +356,47 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    private void kunciLokasiSangatAkurat() {
-        Location loc = null;
+    // --- PENCARI LOKASI TERAKHIR YANG ROBUST DARI SEMUA PROVIDER ---
+    private Location dapatkanLokasiTerakhir() {
+        Location bestLoc = null;
         try {
-            if (locationManager != null) {
-                if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                    ucapkanSuara("GPS belum aktif. Aktifkan GPS terlebih dahulu.");
-                    info.setText("Gagal: GPS tidak aktif.");
-                    return;
-                }
-                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            if (locationManager == null) {
+                locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             }
-        } catch (SecurityException e) {
-            ucapkanSuara("Izin lokasi ditolak.");
-            return;
-        }
+            if (locationManager != null && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                List<String> providers = locationManager.getProviders(true);
+                for (String provider : providers) {
+                    Location l = locationManager.getLastKnownLocation(provider);
+                    if (l != null) {
+                        if (bestLoc == null || l.getTime() > bestLoc.getTime()) {
+                            bestLoc = l;
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {}
+        return bestLoc;
+    }
 
-        if (loc == null || (System.currentTimeMillis() - loc.getTime() > 7000)) {
-            ucapkanSuara("Sinyal satelit tidak valid atau basi. Pastikan Anda berada di luar ruangan di bawah langit terbuka.");
-            info.setText("Gagal mengunci: Tidak ada sinyal satelit langsung baru.");
+    private void kunciLokasiSangatAkurat() {
+        Location loc = dapatkanLokasiTerakhir();
+        if (loc == null || (System.currentTimeMillis() - loc.getTime() > 15000)) {
+            ucapkanSuara("Sinyal satelit tidak valid atau basi. Pastikan Anda berada di luar ruangan.");
+            info.setText("Gagal mengunci: Tidak ada sinyal satelit baru.");
             return;
         }
 
         float akurasi = loc.getAccuracy();
         if (akurasi > 3.0f) {
-            ucapkanSuara("Sinyal satelit terhalang atau berupa pantulan. Akurasi saat ini plus minus " + (int)akurasi + " meter. Pindah ke tempat terbuka.");
-            info.setText("Gagal mengunci: Akurasi buruk (± " + (int)akurasi + " m). Batas maksimal adalah 3 meter.");
-            return;
-        }
-
-        String provider = loc.getProvider();
-        if (provider == null || !provider.equals(LocationManager.GPS_PROVIDER)) {
-            ucapkanSuara("Terdeteksi bukan sinyal satelit murni. Pindah ke area terbuka.");
-            info.setText("Gagal mengunci: Sumber bukan sinyal satelit langsung.");
+            ucapkanSuara("Akurasi saat ini plus minus " + (int)akurasi + " meter. Batas maksimal adalah 3 meter.");
+            info.setText("Gagal mengunci: Akurasi buruk (± " + (int)akurasi + " m).");
             return;
         }
 
         final double finalLat = loc.getLatitude();
         final double finalLon = loc.getLongitude();
 
-        ucapkanSuara("Posisi terkunci akurat dengan akurasi " + (int)akurasi + " meter. Masukkan nama untuk disimpan ke daftar lokasi.");
+        ucapkanSuara("Posisi terkunci akurat dengan akurasi " + (int)akurasi + " meter. Masukkan nama lokasi.");
         
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Simpan Lokasi Terkunci");
@@ -414,7 +415,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 daftarLokasiTersimpan.add(new LokasiTersimpan(namaLokasi, finalLat, finalLon));
                 simpanDataLokasiKePrefs();
                 
-                ucapkanSuara("Lokasi " + namaLokasi + " berhasil disimpan ke daftar.");
+                ucapkanSuara("Lokasi " + namaLokasi + " berhasil disimpan.");
                 info.setText("Lokasi Tersimpan:\n" + namaLokasi + "\nLat: " + finalLat + ", Lon: " + finalLon);
             }
         });
@@ -426,7 +427,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Cari Lokasi Tujuan");
         final EditText input = new EditText(this);
-        input.setHint("Contoh: Jalan Bhayangkara");
+        input.setHint("Contoh: Taman Karampuang");
         input.setPadding(40, 30, 40, 30);
         builder.setView(input);
 
@@ -435,19 +436,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             public void onClick(DialogInterface dialog, int which) {
                 String query = input.getText().toString().trim();
                 if (!query.isEmpty()) {
-                    
-                    // Pencarian bebas tanpa batasan wajib di luar ruangan / tanpa kunci akurasi ketat ala Lazarillo
-                    Location loc = null;
-                    try {
-                        if (locationManager != null) {
-                            if (ActivityCompat.checkSelfPermission(MainActivity.this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                                if (loc == null) {
-                                    loc = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
-                                }
-                            }
-                        }
-                    } catch (Exception e) {}
+                    // Ambil lokasi terakhir yang valid dari semua provider yang tersedia
+                    Location loc = dapatkanLokasiTerakhir();
 
                     double currentLat = (loc != null) ? loc.getLatitude() : 0.0;
                     double currentLon = (loc != null) ? loc.getLongitude() : 0.0;
@@ -544,17 +534,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void tampilkanDialogSimpanLokasiCustom(final String defaultNama) {
-        Location loc = null;
-        try {
-            if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                }
-            }
-        } catch (Exception e) {}
-
+        Location loc = dapatkanLokasiTerakhir();
         if (loc == null) {
-            ucapkanSuara("GPS belum aktif.");
+            ucapkanSuara("GPS belum siap.");
             return;
         }
 
@@ -680,15 +662,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private void cekPosisiAlamatLengkap() {
-        Location loc = null;
-        try {
-            if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                }
-            }
-        } catch (Exception e) {}
-
+        Location loc = dapatkanLokasiTerakhir();
         if (loc == null) {
             ucapkanSuara("Sinyal GPS belum siap.");
             return;
@@ -842,14 +816,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         daftarInstruksi.clear();
         
         ucapkanSuara("Memuat rute detail ke " + lokasiNavigasiAktif.nama + "...");
-        Location loc = null;
-        try {
-            if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
-                }
-            }
-        } catch (Exception e) {}
+        Location loc = dapatkanLokasiTerakhir();
 
         double sLat = (loc != null) ? loc.getLatitude() : lokasiNavigasiAktif.lat - 0.001;
         double sLon = (loc != null) ? loc.getLongitude() : lokasiNavigasiAktif.lon - 0.001;
