@@ -44,8 +44,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private SensorManager sensorManager;
     private Sensor rotationSensor;
     
-    private float currentAzimuth = 0.0f; // Arah hadap kompas presisi tinggi (0 - 360 derajat)
-    private float lastAnnouncedAzimuth = 0.0f; // Penyaring agar tidak spam saat bergeser sedikit
+    private float currentAzimuth = 0.0f; 
+    private float lastAnnouncedAzimuth = 0.0f; 
 
     private TextToSpeech tts;
     private boolean isTtsReady = false;
@@ -114,10 +114,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void inisialisasiSensorKompasPro() {
         sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
         if (sensorManager != null) {
-            // Menggunakan Sensor Rotation Vector (Standar Emas Android untuk Kompas Presisi Tinggi)
             rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
             if (rotationSensor == null) {
-                // Fallback jika HP tidak punya rotation vector, gunakan game rotation vector
                 rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR);
             }
         }
@@ -144,7 +142,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             SensorManager.getOrientation(rotationMatrix, orientation);
             
             float azimuthInDegrees = (float) Math.toDegrees(orientation[0]);
-            currentAzimuth = (azimuthInDegrees + 360) % 360; // Akurat 0 - 360 derajat
+            currentAzimuth = (azimuthInDegrees + 360) % 360; 
         }
     }
 
@@ -224,6 +222,17 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             }
         });
         box.addView(btnCekPosisi);
+
+        // --- TOMBOL KUNCI LOKASI AKURAT (MAX 3M, SIMPAN KE DAFTAR) ---
+        Button btnKunciAkurat = new Button(this);
+        btnKunciAkurat.setText("KUNCI POSISI AKURAT (MAX 3M)");
+        btnKunciAkurat.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                kunciLokasiSangatAkurat();
+            }
+        });
+        box.addView(btnKunciAkurat);
 
         Button btnCariLokasi = new Button(this);
         btnCariLokasi.setText("CARI LOKASI TUJUAN (TEKS)");
@@ -334,6 +343,73 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         } else {
             btn.setText("EKSPLORASI PRO: NONAKTIF");
         }
+    }
+
+    // --- FITUR PENGUNCIAN LOKASI SANGAT AKURAT (MAX 3M, ANTI-BASI, MURNI SATELIT, SIMPAN KE DAFTAR) ---
+    private void kunciLokasiSangatAkurat() {
+        Location loc = null;
+        try {
+            if (locationManager != null) {
+                if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                    ucapkanSuara("GPS belum aktif. Aktifkan GPS terlebih dahulu.");
+                    info.setText("Gagal: GPS tidak aktif.");
+                    return;
+                }
+                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+            }
+        } catch (SecurityException e) {
+            ucapkanSuara("Izin lokasi ditolak.");
+            return;
+        }
+
+        if (loc == null || (System.currentTimeMillis() - loc.getTime() > 7000)) {
+            ucapkanSuara("Sinyal satelit tidak valid atau basi. Pastikan Anda berada di luar ruangan di bawah langit terbuka.");
+            info.setText("Gagal mengunci: Tidak ada sinyal satelit langsung baru.");
+            return;
+        }
+
+        float akurasi = loc.getAccuracy();
+        if (akurasi > 3.0f) {
+            ucapkanSuara("Sinyal satelit terhalang atau berupa pantulan. Akurasi saat ini plus minus " + (int)akurasi + " meter. Pindah ke tempat terbuka.");
+            info.setText("Gagal mengunci: Akurasi buruk (± " + (int)akurasi + " m). Batas maksimal adalah 3 meter.");
+            return;
+        }
+
+        String provider = loc.getProvider();
+        if (provider == null || !provider.equals(LocationManager.GPS_PROVIDER)) {
+            ucapkanSuara("Terdeteksi bukan sinyal satelit murni. Pindah ke area terbuka.");
+            info.setText("Gagal mengunci: Sumber bukan sinyal satelit langsung.");
+            return;
+        }
+
+        final double finalLat = loc.getLatitude();
+        final double finalLon = loc.getLongitude();
+
+        ucapkanSuara("Posisi terkunci akurat dengan akurasi " + (int)akurasi + " meter. Masukkan nama untuk disimpan ke daftar lokasi.");
+        
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Simpan Lokasi Terkunci");
+        
+        final EditText input = new EditText(this);
+        input.setText("Lokasi Akurat " + (daftarLokasiTersimpan.size() + 1));
+        input.setPadding(40, 30, 40, 30);
+        builder.setView(input);
+
+        builder.setPositiveButton("Simpan ke Daftar", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String namaLokasi = input.getText().toString().trim();
+                if (namaLokasi.isEmpty()) namaLokasi = "Lokasi Akurat";
+                
+                daftarLokasiTersimpan.add(new LokasiTersimpan(namaLokasi, finalLat, finalLon));
+                simpanDataLokasiKePrefs();
+                
+                ucapkanSuara("Lokasi " + namaLokasi + " berhasil disimpan ke daftar.");
+                info.setText("Lokasi Tersimpan:\n" + namaLokasi + "\nLat: " + finalLat + ", Lon: " + finalLon + "\n(Silakan cek melalui menu Kelola Lokasi)");
+            }
+        });
+        builder.setNegativeButton("Batal", null);
+        builder.show();
     }
 
     private void tampilkanDialogPencarianLokasi() {
@@ -583,7 +659,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    // --- EKSPLORASI PRO DENGAN ROTATION VECTOR KOMPUTASI TINGGI ---
     private class EksplorasiKompasProTask extends AsyncTask<Double, Void, List<TempatPro>> {
         double cLat, cLon;
 
@@ -593,7 +668,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             cLon = coords[1];
             List<TempatPro> hasil = new ArrayList<>();
             try {
-                // Radius 40 meter diperluas agar lebih kaya tempat
                 String query = "[out:json][timeout:3];(" +
                                "node(around:40," + cLat + "," + cLon + ")[name];" +
                                "way(around:40," + cLat + "," + cLon + ")[name];" +
@@ -642,7 +716,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     int jarak = (int) dist[0];
                     if (jarak == 0) jarak = 3;
 
-                    // Hitung sudut bearing mutlak ke objek
                     double dLon = Math.toRadians(t.lon - cLon);
                     double y = Math.sin(dLon) * Math.cos(Math.toRadians(t.lat));
                     double x = Math.cos(Math.toRadians(cLat)) * Math.sin(Math.toRadians(t.lat)) -
@@ -650,7 +723,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     double bearing = Math.toDegrees(Math.atan2(y, x));
                     bearing = (bearing + 360) % 360;
 
-                    // Bandingkan dengan currentAzimuth dari Sensor Rotation Vector
                     double selisih = bearing - currentAzimuth;
                     while (selisih < -180) selisih += 360;
                     while (selisih > 180) selisih -= 360;
@@ -761,7 +833,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             double cLat = location.getLatitude();
             double cLon = location.getLongitude();
             
-            // Pemicu eksplorasi saat bergeser minimal 5 meter (lebih sensitif)
             if (isEksplorasiFiturAktif && !isNavigating && !sedangMemindaiOtomatis) {
                 float[] dist = new float[1];
                 if (lastExplorationLat == 0.0) {
@@ -775,7 +846,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             }
 
-            // Pemicu deteksi perubahan rotasi kompas (Jika pengguna berputar arah > 45 derajat di tempat)
             if (isEksplorasiFiturAktif && !isNavigating && !sedangMemindaiOtomatis) {
                 float diffAzimuth = Math.abs(currentAzimuth - lastAnnouncedAzimuth);
                 if (diffAzimuth > 45.0f) {
