@@ -426,7 +426,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Cari Lokasi Tujuan");
         final EditText input = new EditText(this);
-        input.setHint("Contoh: Taman Karangpuang");
+        input.setHint("Contoh: Jalan Bhayangkara");
         input.setPadding(40, 30, 40, 30);
         builder.setView(input);
 
@@ -435,21 +435,29 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             public void onClick(DialogInterface dialog, int which) {
                 String query = input.getText().toString().trim();
                 if (!query.isEmpty()) {
-                    ucapkanSuara("Mencari " + query + "...");
                     
                     Location loc = null;
                     try {
-                        if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                        if (locationManager != null) {
+                            if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                                ucapkanSuara("GPS belum aktif. Aktifkan GPS terlebih dahulu.");
+                                info.setText("Gagal: GPS tidak aktif.");
+                                return;
+                            }
                             if (ActivityCompat.checkSelfPermission(MainActivity.this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                                 loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
                             }
                         }
                     } catch (Exception e) {}
 
-                    double currentLat = (loc != null) ? loc.getLatitude() : 0.0;
-                    double currentLon = (loc != null) ? loc.getLongitude() : 0.0;
+                    if (loc == null || (loc.getLatitude() == 0.0 && loc.getLongitude() == 0.0)) {
+                        ucapkanSuara("Sinyal GPS belum siap atau belum mengunci posisi Anda. Tunggu sebentar atau pindah ke area terbuka.");
+                        info.setText("Gagal: Sinyal GPS belum siap.");
+                        return;
+                    }
 
-                    new CariLokasiTask(currentLat, currentLon).execute(query);
+                    ucapkanSuara("Mencari " + query + "...");
+                    new CariLokasiTask(loc.getLatitude(), loc.getLongitude()).execute(query);
                 }
             }
         });
