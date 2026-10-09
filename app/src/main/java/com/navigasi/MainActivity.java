@@ -436,28 +436,24 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 String query = input.getText().toString().trim();
                 if (!query.isEmpty()) {
                     
+                    // Pencarian bebas tanpa batasan wajib di luar ruangan / tanpa kunci akurasi ketat ala Lazarillo
                     Location loc = null;
                     try {
                         if (locationManager != null) {
-                            if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                                ucapkanSuara("GPS belum aktif. Aktifkan GPS terlebih dahulu.");
-                                info.setText("Gagal: GPS tidak aktif.");
-                                return;
-                            }
                             if (ActivityCompat.checkSelfPermission(MainActivity.this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                                 loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                                if (loc == null) {
+                                    loc = locationManager.getLastKnownLocation(LocationManager.NETWORK_PROVIDER);
+                                }
                             }
                         }
                     } catch (Exception e) {}
 
-                    if (loc == null || (loc.getLatitude() == 0.0 && loc.getLongitude() == 0.0)) {
-                        ucapkanSuara("Sinyal GPS belum siap atau belum mengunci posisi Anda. Tunggu sebentar atau pindah ke area terbuka.");
-                        info.setText("Gagal: Sinyal GPS belum siap.");
-                        return;
-                    }
+                    double currentLat = (loc != null) ? loc.getLatitude() : 0.0;
+                    double currentLon = (loc != null) ? loc.getLongitude() : 0.0;
 
                     ucapkanSuara("Mencari " + query + "...");
-                    new CariLokasiTask(loc.getLatitude(), loc.getLongitude()).execute(query);
+                    new CariLokasiTask(currentLat, currentLon).execute(query);
                 }
             }
         });
@@ -511,7 +507,13 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             if (hasil != null) {
                 lokasiNavigasiAktif = new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon);
                 
-                String pesanHasil = hasil.namaPendek() + " ditemukan, berjarak " + hasil.jarakMeter + " meter dari posisi Anda.";
+                String pesanHasil;
+                if (hasil.jarakMeter > 0) {
+                    pesanHasil = hasil.namaPendek() + " ditemukan, berjarak " + hasil.jarakMeter + " meter dari posisi Anda.";
+                } else {
+                    pesanHasil = hasil.namaPendek() + " ditemukan.";
+                }
+                
                 ucapkanSuara(pesanHasil);
                 info.setText("Tujuan Dipilih:\n" + hasil.namaPendek() + "\nJarak: " + hasil.jarakMeter + " meter\nLat: " + hasil.lat + ", Lon: " + hasil.lon);
             } else {
