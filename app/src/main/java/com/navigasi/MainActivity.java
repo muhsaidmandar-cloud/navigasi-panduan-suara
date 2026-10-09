@@ -336,11 +336,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     // =========================================================================
-    // FITUR PENGUNCIAN LOKASI (MANDIRI, 100% SATELIT MURNI, FILTER ANTI-PANTULAN)
+    // FITUR PENGUNCIAN LOKASI (MANDIRI, 100% SATELIT, FILTER JUMP, TIMEOUT 20S)
     // =========================================================================
     private void kunciLokasiSangatAkurat() {
         ucapkanSuara("Mencari sinyal murni satelit dari langit. Harap berdiri di area terbuka.");
-        info.setText("Mengunci sinyal satelit murni secara mandiri (Maks 3 meter)...");
+        info.setText("Mengunci sinyal satelit murni (Maks 3 meter, batas 20 detik)...");
 
         final LocationManager tempLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         if (tempLocationManager == null) {
@@ -358,6 +358,25 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             info.setText("Gagal: GPS nonaktif.");
             return;
         }
+
+        final Handler timeoutHandler = new Handler();
+        final LocationListener[] activeListenerHolder = new LocationListener[1];
+
+        final Runnable timeoutRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (activeListenerHolder[0] != null) {
+                    try {
+                        tempLocationManager.removeUpdates(activeListenerHolder[0]);
+                    } catch (Exception e) {}
+                }
+                ucapkanSuara("Lokasi akurat tidak ditemukan.");
+                info.setText("Penguncian gagal: Lokasi akurat tidak ditemukan (Timeout).");
+            }
+        };
+
+        // Batas waktu pencarian 20 detik
+        timeoutHandler.postDelayed(timeoutRunnable, 20000);
 
         final LocationListener gpsIsolasiListener = new LocationListener() {
             private Location titikSebelumnya = null;
@@ -398,6 +417,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 float akurasi = loc.getAccuracy();
 
                 if (akurasi <= 3.0f) {
+                    // Sukses: Batalkan timeout & hentikan listener GPS
+                    timeoutHandler.removeCallbacks(timeoutRunnable);
                     try {
                         tempLocationManager.removeUpdates(this);
                     } catch (Exception e) {}
@@ -419,9 +440,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             @Override public void onProviderDisabled(String provider) {}
         };
 
+        activeListenerHolder[0] = gpsIsolasiListener;
+
         try {
             tempLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0.0f, gpsIsolasiListener);
         } catch (SecurityException e) {
+            timeoutHandler.removeCallbacks(timeoutRunnable);
             ucapkanSuara("Gagal mengakses GPS.");
         }
     }
