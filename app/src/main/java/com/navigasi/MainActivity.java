@@ -1,4 +1,4 @@
-package com.navigasi;
+Package com.navigasi;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -272,7 +272,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     mulaiMendengarkanGPS();
                     ucapkanSuara("Eksplorasi real-time diaktifkan.");
                     
-                    // Mulai perulangan otomatis real-time ala Lazarillo
                     mulaiEksplorasiRealTime();
                 } else {
                     hentikanEksplorasiRealTime();
@@ -336,6 +335,146 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         setContentView(box);
     }
 
+    // =========================================================================
+    // FITUR PENGUNCIAN LOKASI (MANDIRI, 100% SATELIT MURNI, FILTER ANTI-PANTULAN)
+    // =========================================================================
+    private void kunciLokasiSangatAkurat() {
+        ucapkanSuara("Mencari sinyal murni satelit dari langit. Harap berdiri di area terbuka.");
+        info.setText("Mengunci sinyal satelit murni secara mandiri (Maks 3 meter)...");
+
+        final LocationManager tempLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        if (tempLocationManager == null) {
+            ucapkanSuara("Layanan lokasi tidak tersedia.");
+            return;
+        }
+
+        if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ucapkanSuara("Izin lokasi belum diberikan.");
+            return;
+        }
+
+        if (!tempLocationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            ucapkanSuara("GPS perangkat Anda nonaktif. Mohon aktifkan GPS.");
+            info.setText("Gagal: GPS nonaktif.");
+            return;
+        }
+
+        final LocationListener gpsIsolasiListener = new LocationListener() {
+            private Location titikSebelumnya = null;
+
+            @Override
+            public void onLocationChanged(final Location loc) {
+                if (loc == null) return;
+
+                // 1. Validasi mutlak: Harus murni dari GPS satelit
+                if (!LocationManager.GPS_PROVIDER.equals(loc.getProvider())) {
+                    return;
+                }
+
+                // 2. Validasi keaktualan waktu (data baru maksimal 3 detik)
+                long waktuSekarang = System.currentTimeMillis();
+                if (Math.abs(waktuSekarang - loc.getTime()) > 3000) {
+                    return; 
+                }
+
+                // 3. Filter Anti-Pantulan / Anti-Jumping (Multipath Filter)
+                if (titikSebelumnya != null) {
+                    float[] jarakLompat = new float[1];
+                    Location.distanceBetween(
+                        titikSebelumnya.getLatitude(), titikSebelumnya.getLongitude(),
+                        loc.getLatitude(), loc.getLongitude(),
+                        jarakLompat
+                    );
+                    
+                    if (jarakLompat[0] > 5.0f) {
+                        titikSebelumnya = loc;
+                        return; 
+                    }
+                }
+                titikSebelumnya = loc;
+
+                // 4. Validasi Akurasi Ketat Maksimal 3 Meter
+                if (!loc.hasAccuracy()) return;
+                float akurasi = loc.getAccuracy();
+
+                if (akurasi <= 3.0f) {
+                    try {
+                        tempLocationManager.removeUpdates(this);
+                    } catch (Exception e) {}
+
+                    final double finalLat = loc.getLatitude();
+                    final double finalLon = loc.getLongitude();
+
+                    ucapkanSuara("Sinyal satelit asli terkunci stabil dengan akurasi " + (int)akurasi + " meter.");
+                    
+                    // Memunculkan dialog pilihan konfirmasi simpan atau tidak
+                    tampilkanDialogKonfirmasiSimpan(finalLat, finalLon, (int)akurasi);
+                } else {
+                    info.setText("Menunggu sinyal stabil... Akurasi saat ini: ± " + (int)akurasi + " m");
+                }
+            }
+
+            @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
+            @Override public void onProviderEnabled(String provider) {}
+            @Override public void onProviderDisabled(String provider) {}
+        };
+
+        try {
+            tempLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0.0f, gpsIsolasiListener);
+        } catch (SecurityException e) {
+            ucapkanSuara("Gagal mengakses GPS.");
+        }
+    }
+
+    private void tampilkanDialogKonfirmasiSimpan(final double finalLat, final double finalLon, int akurasi) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Lokasi Akurat Terkunci (± " + akurasi + "m)");
+        builder.setMessage("Lat: " + finalLat + "\nLon: " + finalLon + "\n\nApakah Anda ingin menyimpan lokasi ini ke daftar tersimpan?");
+
+        final EditText inputNama = new EditText(this);
+        inputNama.setText("Lokasi Satelit " + (daftarLokasiTersimpan.size() + 1));
+        inputNama.setPadding(40, 20, 40, 20);
+        
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setPadding(40, 10, 40, 10);
+        
+        TextView labelNama = new TextView(this);
+        labelNama.setText("Nama Lokasi:");
+        container.addView(labelNama);
+        container.addView(inputNama);
+        
+        builder.setView(container);
+
+        // Pilihan 1: SIMPAN
+        builder.setPositiveButton("Simpan", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                String namaLokasi = inputNama.getText().toString().trim();
+                if (namaLokasi.isEmpty()) namaLokasi = "Lokasi Satelit";
+                
+                daftarLokasiTersimpan.add(new LokasiTersimpan(namaLokasi, finalLat, finalLon));
+                simpanDataLokasiKePrefs();
+                
+                ucapkanSuara("Lokasi " + namaLokasi + " berhasil disimpan.");
+                info.setText("Lokasi Tersimpan:\n" + namaLokasi + "\nLat: " + finalLat + ", Lon: " + finalLon);
+            }
+        });
+
+        // Pilihan 2: TIDAK / BATAL
+        builder.setNegativeButton("Tidak", new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                ucapkanSuara("Penguncian dibatalkan, lokasi tidak disimpan.");
+                info.setText("Penguncian selesai (Tidak disimpan).");
+            }
+        });
+
+        builder.setCancelable(false);
+        builder.show();
+    }
+    // =========================================================================
+
     private void mulaiEksplorasiRealTime() {
         if (explorationRunnable == null) {
             explorationRunnable = new Runnable() {
@@ -351,7 +490,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                             new EksplorasiKompasProTask().execute(cLat, cLon, 40.0, (double) headingGuna);
                         }
                     }
-                    // Loop setiap 6 detik secara real-time baik saat diam maupun berjalan
                     explorationHandler.postDelayed(this, 6000);
                 }
             };
@@ -400,51 +538,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             }
         } catch (Exception e) {}
         return bestLoc;
-    }
-
-    private void kunciLokasiSangatAkurat() {
-        Location loc = dapatkanLokasiTerakhir();
-        if (loc == null || (System.currentTimeMillis() - loc.getTime() > 15000)) {
-            ucapkanSuara("Sinyal satelit tidak valid atau basi. Pastikan Anda berada di luar ruangan.");
-            info.setText("Gagal mengunci: Tidak ada sinyal satelit baru.");
-            return;
-        }
-
-        float akurasi = loc.getAccuracy();
-        if (akurasi > 3.0f) {
-            ucapkanSuara("Akurasi saat ini plus minus " + (int)akurasi + " meter. Batas maksimal adalah 3 meter.");
-            info.setText("Gagal mengunci: Akurasi buruk (± " + (int)akurasi + " m).");
-            return;
-        }
-
-        final double finalLat = loc.getLatitude();
-        final double finalLon = loc.getLongitude();
-
-        ucapkanSuara("Posisi terkunci akurat dengan akurasi " + (int)akurasi + " meter. Masukkan nama lokasi.");
-        
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Simpan Lokasi Terkunci");
-        
-        final EditText input = new EditText(this);
-        input.setText("Lokasi Akurat " + (daftarLokasiTersimpan.size() + 1));
-        input.setPadding(40, 30, 40, 30);
-        builder.setView(input);
-
-        builder.setPositiveButton("Simpan ke Daftar", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String namaLokasi = input.getText().toString().trim();
-                if (namaLokasi.isEmpty()) namaLokasi = "Lokasi Akurat";
-                
-                daftarLokasiTersimpan.add(new LokasiTersimpan(namaLokasi, finalLat, finalLon));
-                simpanDataLokasiKePrefs();
-                
-                ucapkanSuara("Lokasi " + namaLokasi + " berhasil disimpan.");
-                info.setText("Lokasi Tersimpan:\n" + namaLokasi + "\nLat: " + finalLat + ", Lon: " + finalLon);
-            }
-        });
-        builder.setNegativeButton("Batal", null);
-        builder.show();
     }
 
     private void tampilkanDialogPencarianLokasi() {
@@ -982,7 +1075,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (location != null) {
             double cLat = location.getLatitude();
             double cLon = location.getLongitude();
-            float akurasiGps = location.hasAccuracy() ? location.getAccuracy() : 10.0f;
             
             if (isNavigating && lokasiNavigasiAktif != null) {
                 if (!daftarInstruksi.isEmpty() && indexInstruksiAktif < daftarInstruksi.size()) {
