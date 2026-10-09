@@ -426,7 +426,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Cari Lokasi Tujuan");
         final EditText input = new EditText(this);
-        input.setHint("Contoh: Masjid Raya Sinjai");
+        input.setHint("Contoh: Taman Karangpuang");
         input.setPadding(40, 30, 40, 30);
         builder.setView(input);
 
@@ -436,7 +436,20 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 String query = input.getText().toString().trim();
                 if (!query.isEmpty()) {
                     ucapkanSuara("Mencari " + query + "...");
-                    new CariLokasiTask().execute(query);
+                    
+                    Location loc = null;
+                    try {
+                        if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                            if (ActivityCompat.checkSelfPermission(MainActivity.this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                            }
+                        }
+                    } catch (Exception e) {}
+
+                    double currentLat = (loc != null) ? loc.getLatitude() : 0.0;
+                    double currentLon = (loc != null) ? loc.getLongitude() : 0.0;
+
+                    new CariLokasiTask(currentLat, currentLon).execute(query);
                 }
             }
         });
@@ -445,6 +458,13 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     private class CariLokasiTask extends AsyncTask<String, Void, HasilPencarian> {
+        double userLat, userLon;
+
+        public CariLokasiTask(double lat, double lon) {
+            this.userLat = lat;
+            this.userLon = lon;
+        }
+
         @Override
         protected HasilPencarian doInBackground(String... params) {
             try {
@@ -457,10 +477,22 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 String line;
                 while ((line = reader.readLine()) != null) sb.append(line);
                 reader.close();
+                
                 JSONArray jsonArray = new JSONArray(sb.toString());
                 if (jsonArray.length() > 0) {
                     JSONObject obj = jsonArray.getJSONObject(0);
-                    return new HasilPencarian(obj.getDouble("lat"), obj.getDouble("lon"), obj.getString("display_name"));
+                    double lat = obj.getDouble("lat");
+                    double lon = obj.getDouble("lon");
+                    String displayName = obj.getString("display_name");
+                    
+                    int jarakMeter = 0;
+                    if (userLat != 0.0 && userLon != 0.0) {
+                        float[] results = new float[1];
+                        Location.distanceBetween(userLat, userLon, lat, lon, results);
+                        jarakMeter = (int) results[0];
+                    }
+
+                    return new HasilPencarian(lat, lon, displayName, jarakMeter);
                 }
             } catch (Exception e) {}
             return null;
@@ -469,11 +501,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         @Override
         protected void onPostExecute(HasilPencarian hasil) {
             if (hasil != null) {
-                ucapkanSuara("Lokasi ditemukan: " + hasil.namaPendek());
                 lokasiNavigasiAktif = new LokasiTersimpan(hasil.namaPendek(), hasil.lat, hasil.lon);
-                mulaiNavigasiTersimpan();
+                
+                String pesanHasil = hasil.namaPendek() + " ditemukan, berjarak " + hasil.jarakMeter + " meter dari posisi Anda.";
+                ucapkanSuara(pesanHasil);
+                info.setText("Tujuan Dipilih:\n" + hasil.namaPendek() + "\nJarak: " + hasil.jarakMeter + " meter\nLat: " + hasil.lat + ", Lon: " + hasil.lon);
             } else {
-                ucapkanSuara("Lokasi tidak ditemukan.");
+                ucapkanSuara("Lokasi tidak ditemukan. Coba masukkan nama tempat dengan lebih spesifik.");
+                info.setText("Pencarian gagal.");
             }
         }
     }
@@ -481,11 +516,19 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private static class HasilPencarian {
         double lat, lon;
         String displayName;
-        public HasilPencarian(double lat, double lon, String displayName) {
-            this.lat = lat; this.lon = lon; this.displayName = displayName;
+        int jarakMeter;
+
+        public HasilPencarian(double lat, double lon, String displayName, int jarakMeter) {
+            this.lat = lat; 
+            this.lon = lon; 
+            this.displayName = displayName;
+            this.jarakMeter = jarakMeter;
         }
+
         public String namaPendek() {
-            if (displayName != null && displayName.contains(",")) return displayName.split(",")[0];
+            if (displayName != null && displayName.contains(",")) {
+                return displayName.split(",")[0].trim();
+            }
             return displayName;
         }
     }
@@ -494,7 +537,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         Location loc = null;
         try {
             if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                }
             }
         } catch (Exception e) {}
 
