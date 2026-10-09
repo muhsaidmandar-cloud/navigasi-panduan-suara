@@ -1,4 +1,4 @@
-Package com.navigasi;
+package com.navigasi;
 
 import android.app.Activity;
 import android.app.AlertDialog;
