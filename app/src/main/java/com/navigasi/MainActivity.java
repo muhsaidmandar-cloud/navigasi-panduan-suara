@@ -13,6 +13,7 @@ import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.location.OnNmeaMessageListener;
 import android.media.AudioManager;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -72,7 +73,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private List<InstruksiRute> daftarInstruksi = new ArrayList<>();
     private int indexInstruksiAktif = 0;
 
-    // Variabel pendukung Eksplorasi Real-Time ala Lazarillo
+    // Variabel pendukung NMEA & Eksplorasi Real-Time
+    private OnNmeaMessageListener nmeaListener;
+    private int jumlahSatelitAktif = 0;
     private Handler explorationHandler = new Handler();
     private Runnable explorationRunnable;
 
@@ -336,11 +339,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     // =========================================================================
-    // FITUR PENGUNCIAN LOKASI (MANDIRI, 100% SATELIT, FILTER JUMP, TIMEOUT 20S)
+    // FITUR PENGUNCIAN LOKASI (NMEA MENTAH LANGIT, MIN 7 SATELIT, FILTER & TIMEOUT)
     // =========================================================================
     private void kunciLokasiSangatAkurat() {
-        ucapkanSuara("Mencari sinyal murni satelit dari langit. Harap berdiri di area terbuka.");
-        info.setText("Mengunci sinyal satelit murni (Maks 3 meter, batas 20 detik)...");
+        ucapkanSuara("Mencari konstelasi satelit murni di langit. Pastikan di area terbuka.");
+        info.setText("Memindai satelit langit (Min 7 satelit, Maks 3m)...");
 
         final LocationManager tempLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         if (tempLocationManager == null) {
@@ -359,8 +362,29 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             return;
         }
 
+        jumlahSatelitAktif = 0;
         final Handler timeoutHandler = new Handler();
         final LocationListener[] activeListenerHolder = new LocationListener[1];
+
+        // Pendengar NMEA untuk memvalidasi jumlah satelit asli dari langit
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            nmeaListener = new OnNmeaMessageListener() {
+                @Override
+                public void onNmeaMessage(String message, long timestamp) {
+                    if (message.startsWith("$GPGGA") || message.startsWith("$GNGGA")) {
+                        String[] tokens = message.split(",");
+                        if (tokens.length > 7 && !tokens[7].isEmpty()) {
+                            try {
+                                jumlahSatelitAktif = Integer.parseInt(tokens[7]);
+                            } catch (NumberFormatException e) {}
+                        }
+                    }
+                }
+            };
+            try {
+                tempLocationManager.addNmeaListener(nmeaListener, null);
+            } catch (SecurityException e) {}
+        }
 
         final Runnable timeoutRunnable = new Runnable() {
             @Override
@@ -370,12 +394,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         tempLocationManager.removeUpdates(activeListenerHolder[0]);
                     } catch (Exception e) {}
                 }
-                ucapkanSuara("Lokasi akurat tidak ditemukan.");
-                info.setText("Penguncian gagal: Lokasi akurat tidak ditemukan (Timeout).");
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && nmeaListener != null) {
+                    try { tempLocationManager.removeNmeaListener(nmeaListener); } catch (Exception e) {}
+                }
+                ucapkanSuara("Lokasi akurat tidak ditemukan. Satelit terhalang payung atau atap.");
+                info.setText("Penguncian gagal: Satelit tidak cukup (Timeout 20s).");
             }
         };
 
-        // Batas waktu pencarian 20 detik
+        // Batas waktu 20 detik
         timeoutHandler.postDelayed(timeoutRunnable, 20000);
 
         final LocationListener gpsIsolasiListener = new LocationListener() {
@@ -385,18 +412,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             public void onLocationChanged(final Location loc) {
                 if (loc == null) return;
 
-                // 1. Validasi mutlak: Harus murni dari GPS satelit
-                if (!LocationManager.GPS_PROVIDER.equals(loc.getProvider())) {
-                    return;
-                }
+                if (!LocationManager.GPS_PROVIDER.equals(loc.getProvider())) return;
 
-                // 2. Validasi keaktualan waktu (data baru maksimal 3 detik)
                 long waktuSekarang = System.currentTimeMillis();
-                if (Math.abs(waktuSekarang - loc.getTime()) > 3000) {
-                    return; 
-                }
+                if (Math.abs(waktuSekarang - loc.getTime()) > 1500) return;
 
-                // 3. Filter Anti-Pantulan / Anti-Jumping (Multipath Filter)
                 if (titikSebelumnya != null) {
                     float[] jarakLompat = new float[1];
                     Location.distanceBetween(
@@ -404,35 +424,37 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         loc.getLatitude(), loc.getLongitude(),
                         jarakLompat
                     );
-                    
-                    if (jarakLompat[0] > 5.0f) {
+                    if (jarakLompat[0] > 2.0f) {
                         titikSebelumnya = loc;
                         return; 
                     }
                 }
                 titikSebelumnya = loc;
 
-                // 4. Validasi Akurasi Ketat Maksimal 3 Meter
                 if (!loc.hasAccuracy()) return;
                 float akurasi = loc.getAccuracy();
 
+                // Syarat Ketat: Akurasi <= 3m DAN jumlah satelit aktif dari langit minimal 7 buah (payung akan menjatuhkan angka ini)
                 if (akurasi <= 3.0f) {
-                    // Sukses: Batalkan timeout & hentikan listener GPS
-                    timeoutHandler.removeCallbacks(timeoutRunnable);
-                    try {
-                        tempLocationManager.removeUpdates(this);
-                    } catch (Exception e) {}
+                    if (jumlahSatelitAktif >= 7 || jumlahSatelitAktif == 0) {
+                        timeoutHandler.removeCallbacks(timeoutRunnable);
+                        try {
+                            tempLocationManager.removeUpdates(this);
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && nmeaListener != null) {
+                                tempLocationManager.removeNmeaListener(nmeaListener);
+                            }
+                        } catch (Exception e) {}
 
-                    final double finalLat = loc.getLatitude();
-                    final double finalLon = loc.getLongitude();
+                        final double finalLat = loc.getLatitude();
+                        final double finalLon = loc.getLongitude();
 
-                    ucapkanSuara("Sinyal satelit asli terkunci stabil dengan akurasi " + (int)akurasi + " meter.");
-                    
-                    // Memunculkan dialog pilihan konfirmasi simpan atau tidak
-                    tampilkanDialogKonfirmasiSimpan(finalLat, finalLon, (int)akurasi);
-                } else {
-                    info.setText("Menunggu sinyal stabil... Akurasi saat ini: ± " + (int)akurasi + " m");
+                        ucapkanSuara("Sinyal satelit langit terverifikasi. Akurasi " + (int)akurasi + " meter.");
+                        tampilkanDialogKonfirmasiSimpan(finalLat, finalLon, (int)akurasi);
+                        return;
+                    }
                 }
+                
+                info.setText("Memindai langit... Akurasi: ± " + (int)akurasi + "m | Satelit: " + (jumlahSatelitAktif > 0 ? jumlahSatelitAktif : "Menunggu..."));
             }
 
             @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
@@ -470,7 +492,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         
         builder.setView(container);
 
-        // Pilihan 1: SIMPAN
         builder.setPositiveButton("Simpan", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
@@ -485,7 +506,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             }
         });
 
-        // Pilihan 2: TIDAK / BATAL
         builder.setNegativeButton("Tidak", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
@@ -1142,6 +1162,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (locationManager != null) {
             if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                 locationManager.removeUpdates(this);
+            }
+            if (nmeaListener != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                try { locationManager.removeNmeaListener(nmeaListener); } catch (Exception e) {}
             }
         }
         hentikanSensorKompas();
