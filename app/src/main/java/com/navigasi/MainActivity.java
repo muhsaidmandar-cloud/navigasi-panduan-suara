@@ -1,4 +1,4 @@
-package com.navigasi;
+Package com.navigasi;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -22,7 +22,6 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.SeekBar;
 import android.widget.TextView;
 
 import org.json.JSONArray;
@@ -51,14 +50,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private boolean isTtsReady = false;
 
     // Pengaturan Suara & TTS
-    private float kecepatanBicara = 1.0f; 
-    private float nadaBicara = 1.0f;     
+    private float kecepatanBicara = 1.0f;     
     private String targetTtsEngine = null; 
-    private String namaEngineAktif = "Default Sistem";
 
     // Pilihan Stream Audio
     private int selectedAudioStream = AudioManager.STREAM_MUSIC;
-    private String namaStreamAktif = "Media / Musik";
 
     // Penyimpanan Multi-Lokasi
     private List<LokasiTersimpan> daftarLokasiTersimpan = new ArrayList<>();
@@ -66,7 +62,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     
     private boolean isNavigating = false;
     
-    // Status Eksplorasi Real-Time
+    // Status Eksplorasi Real-Time Dinamis (Ala Lazarillo)
     private boolean isEksplorasiFiturAktif = false;
     private boolean sedangMemindaiOtomatis = false;
     private double lastExplorationLat = 0.0;
@@ -223,7 +219,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         });
         box.addView(btnCekPosisi);
 
-        // --- TOMBOL KUNCI LOKASI AKURAT (MAX 3M, SIMPAN KE DAFTAR) ---
         Button btnKunciAkurat = new Button(this);
         btnKunciAkurat.setText("KUNCI POSISI AKURAT (MAX 3M)");
         btnKunciAkurat.setOnClickListener(new View.OnClickListener() {
@@ -244,7 +239,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         });
         box.addView(btnCariLokasi);
 
-        // --- SAKLAR EKSPLORASI KOMPAS SEMPURNA ---
         final Button btnToggleEksplorasi = new Button(this);
         updateTeksTombolEksplorasi(btnToggleEksplorasi);
         btnToggleEksplorasi.setOnClickListener(new View.OnClickListener() {
@@ -258,19 +252,19 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     lastExplorationLon = 0.0;
                     mulaiSensorKompas();
                     mulaiMendengarkanGPS();
-                    ucapkanSuara("Eksplorasi kompas pro diaktifkan.");
+                    ucapkanSuara("Eksplorasi pro diaktifkan.");
                     
                     try {
                         if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
                             Location loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
                             if (loc != null) {
-                                new EksplorasiKompasProTask().execute(loc.getLatitude(), loc.getLongitude());
+                                new EksplorasiKompasProTask().execute(loc.getLatitude(), loc.getLongitude(), 40.0);
                             }
                         }
                     } catch (Exception e) {}
                 } else {
                     hentikanSensorKompas();
-                    ucapkanSuara("Eksplorasi kompas dinonaktifkan.");
+                    ucapkanSuara("Eksplorasi dinonaktifkan.");
                 }
             }
         });
@@ -345,67 +339,49 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    // --- FITUR PENGUNCIAN LOKASI SANGAT AKURAT (MAX 3M, ANTI-BASI, MURNI SATELIT, SIMPAN KE DAFTAR) ---
     private void kunciLokasiSangatAkurat() {
         Location loc = null;
         try {
             if (locationManager != null) {
                 if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                    ucapkanSuara("GPS belum aktif. Aktifkan GPS terlebih dahulu.");
-                    info.setText("Gagal: GPS tidak aktif.");
+                    ucapkanSuara("GPS belum aktif.");
                     return;
                 }
                 loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
             }
         } catch (SecurityException e) {
-            ucapkanSuara("Izin lokasi ditolak.");
             return;
         }
 
         if (loc == null || (System.currentTimeMillis() - loc.getTime() > 7000)) {
-            ucapkanSuara("Sinyal satelit tidak valid atau basi. Pastikan Anda berada di luar ruangan di bawah langit terbuka.");
-            info.setText("Gagal mengunci: Tidak ada sinyal satelit langsung baru.");
+            ucapkanSuara("Sinyal satelit tidak valid atau basi.");
             return;
         }
 
         float akurasi = loc.getAccuracy();
         if (akurasi > 3.0f) {
-            ucapkanSuara("Sinyal satelit terhalang atau berupa pantulan. Akurasi saat ini plus minus " + (int)akurasi + " meter. Pindah ke tempat terbuka.");
-            info.setText("Gagal mengunci: Akurasi buruk (± " + (int)akurasi + " m). Batas maksimal adalah 3 meter.");
-            return;
-        }
-
-        String provider = loc.getProvider();
-        if (provider == null || !provider.equals(LocationManager.GPS_PROVIDER)) {
-            ucapkanSuara("Terdeteksi bukan sinyal satelit murni. Pindah ke area terbuka.");
-            info.setText("Gagal mengunci: Sumber bukan sinyal satelit langsung.");
+            ucapkanSuara("Akurasi kurang dari 3 meter. Pindah ke tempat terbuka.");
             return;
         }
 
         final double finalLat = loc.getLatitude();
         final double finalLon = loc.getLongitude();
 
-        ucapkanSuara("Posisi terkunci akurat dengan akurasi " + (int)akurasi + " meter. Masukkan nama untuk disimpan ke daftar lokasi.");
-        
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("Simpan Lokasi Terkunci");
-        
         final EditText input = new EditText(this);
         input.setText("Lokasi Akurat " + (daftarLokasiTersimpan.size() + 1));
         input.setPadding(40, 30, 40, 30);
         builder.setView(input);
 
-        builder.setPositiveButton("Simpan ke Daftar", new DialogInterface.OnClickListener() {
+        builder.setPositiveButton("Simpan", new DialogInterface.OnClickListener() {
             @Override
             public void onClick(DialogInterface dialog, int which) {
                 String namaLokasi = input.getText().toString().trim();
                 if (namaLokasi.isEmpty()) namaLokasi = "Lokasi Akurat";
-                
                 daftarLokasiTersimpan.add(new LokasiTersimpan(namaLokasi, finalLat, finalLon));
                 simpanDataLokasiKePrefs();
-                
-                ucapkanSuara("Lokasi " + namaLokasi + " berhasil disimpan ke daftar.");
-                info.setText("Lokasi Tersimpan:\n" + namaLokasi + "\nLat: " + finalLat + ", Lon: " + finalLon + "\n(Silakan cek melalui menu Kelola Lokasi)");
+                ucapkanSuara("Lokasi " + namaLokasi + " disimpan.");
             }
         });
         builder.setNegativeButton("Batal", null);
@@ -636,7 +612,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 String urlStr = "https://nominatim.openstreetmap.org/reverse?lat=" + params[0] + "&lon=" + params[1] + "&format=json&addressdetails=1";
                 URL url = new URL(urlStr);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestProperty("User-Agent", "LazarilloProAndroid/1.0");
+                conn.setRequestProperty("User-Agent", "NavigasiAplikasiAndroid");
                 BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                 StringBuilder sb = new StringBuilder();
                 String line;
@@ -659,24 +635,29 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
+    // --- TASK EKSPLORASI DENGAN RADIUS DINAMIS ALA LAZARILLO ---
     private class EksplorasiKompasProTask extends AsyncTask<Double, Void, List<TempatPro>> {
         double cLat, cLon;
+        int radius = 40;
 
         @Override
         protected List<TempatPro> doInBackground(Double... coords) {
             cLat = coords[0];
             cLon = coords[1];
+            if (coords.length > 2) {
+                radius = coords[2].intValue();
+            }
             List<TempatPro> hasil = new ArrayList<>();
             try {
                 String query = "[out:json][timeout:3];(" +
-                               "node(around:40," + cLat + "," + cLon + ")[name];" +
-                               "way(around:40," + cLat + "," + cLon + ")[name];" +
+                               "node(around:" + radius + "," + cLat + "," + cLon + ")[name];" +
+                               "way(around:" + radius + "," + cLat + "," + cLon + ")[name];" +
                                ");out body 10;";
                 
                 String urlStr = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8");
                 URL url = new URL(urlStr);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestProperty("User-Agent", "LazarilloProAndroid/1.0");
+                conn.setRequestProperty("User-Agent", "NavigasiAplikasiAndroid");
                 
                 BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
                 StringBuilder sb = new StringBuilder();
@@ -716,27 +697,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     int jarak = (int) dist[0];
                     if (jarak == 0) jarak = 3;
 
-                    double dLon = Math.toRadians(t.lon - cLon);
-                    double y = Math.sin(dLon) * Math.cos(Math.toRadians(t.lat));
-                    double x = Math.cos(Math.toRadians(cLat)) * Math.sin(Math.toRadians(t.lat)) -
-                               Math.sin(Math.toRadians(cLat)) * Math.cos(Math.toRadians(t.lat)) * Math.cos(dLon);
-                    double bearing = Math.toDegrees(Math.atan2(y, x));
-                    bearing = (bearing + 360) % 360;
-
-                    double selisih = bearing - currentAzimuth;
-                    while (selisih < -180) selisih += 360;
-                    while (selisih > 180) selisih -= 360;
-
-                    String posisi = "di depan Anda";
-                    if (selisih > 40 && selisih <= 135) {
-                        posisi = "di sebelah kanan Anda";
-                    } else if (selisih > 135 || selisih < -135) {
-                        posisi = "di belakang Anda";
-                    } else if (selisih >= -135 && selisih < -40) {
-                        posisi = "di sebelah kiri Anda";
-                    }
-
-                    String teks = t.nama + ", " + jarak + " meter " + posisi + ". ";
+                    String teks = t.nama + ", " + jarak + " meter di sekitar Anda. ";
                     ucapkanSuara(teks);
                     sb.append(teks).append("\n");
 
@@ -827,31 +788,40 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
+    // --- ON LOCATION CHANGED DENGAN DETEKSI KECEPATAN OTOMATIS ---
     @Override
     public void onLocationChanged(Location location) {
         if (location != null) {
             double cLat = location.getLatitude();
             double cLon = location.getLongitude();
             
+            // Deteksi kecepatan perangkat (meter per detik)
+            float speed = location.hasSpeed() ? location.getSpeed() : 0.0f;
+            
+            float thresholdJarakPicu;
+            int radiusPencarianApi;
+            
+            // Logika Penyesuaian Dinamis (Jalan Kaki vs Naik Motor)
+            if (speed > 3.0f) {
+                // Mode Kendaraan / Motor (> ~11 km/jam)
+                thresholdJarakPicu = 20.0f; 
+                radiusPencarianApi = 100;   
+            } else {
+                // Mode Pejalan Kaki
+                thresholdJarakPicu = 5.0f;  
+                radiusPencarianApi = 40;    
+            }
+
             if (isEksplorasiFiturAktif && !isNavigating && !sedangMemindaiOtomatis) {
                 float[] dist = new float[1];
                 if (lastExplorationLat == 0.0) {
                     lastExplorationLat = cLat; lastExplorationLon = cLon;
                 }
                 Location.distanceBetween(lastExplorationLat, lastExplorationLon, cLat, cLon, dist);
-                if (dist[0] >= 5.0f) {
+                if (dist[0] >= thresholdJarakPicu) {
                     lastExplorationLat = cLat; lastExplorationLon = cLon;
                     sedangMemindaiOtomatis = true;
-                    new EksplorasiKompasProTask().execute(cLat, cLon);
-                }
-            }
-
-            if (isEksplorasiFiturAktif && !isNavigating && !sedangMemindaiOtomatis) {
-                float diffAzimuth = Math.abs(currentAzimuth - lastAnnouncedAzimuth);
-                if (diffAzimuth > 45.0f) {
-                    lastAnnouncedAzimuth = currentAzimuth;
-                    sedangMemindaiOtomatis = true;
-                    new EksplorasiKompasProTask().execute(cLat, cLon);
+                    new EksplorasiKompasProTask().execute(cLat, cLon, (double) radiusPencarianApi);
                 }
             }
 
@@ -861,12 +831,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     float[] hasilJarak = new float[1];
                     Location.distanceBetween(cLat, cLon, instruksi.lat, instruksi.lon, hasilJarak);
                     
-                    if (hasilJarak[0] <= 25.0f && !instruksi.sudahDiumumkan) {
+                    if (hasilJarak[0] <= 30.0f && !instruksi.sudahDiumumkan) {
                         ucapkanSuara((int)hasilJarak[0] + " meter lagi, " + instruksi.pesanPanduan);
                         instruksi.sudahDiumumkan = true;
                     }
 
-                    if (hasilJarak[0] <= 4.0f) {
+                    if (hasilJarak[0] <= 5.0f) {
                         indexInstruksiAktif++;
                         if (indexInstruksiAktif < daftarInstruksi.size()) {
                             ucapkanSuara(daftarInstruksi.get(indexInstruksiAktif).pesanPanduan);
