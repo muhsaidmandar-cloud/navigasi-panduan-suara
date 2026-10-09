@@ -339,11 +339,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     // =========================================================================
-    // FITUR PENGUNCIAN LOKASI (NMEA MENTAH LANGIT, MIN 7 SATELIT, FILTER & TIMEOUT)
+    // FITUR PENGUNCIAN LOKASI (ULTIMATE ANTI-PAYUNG, MAX 3M, TIMEOUT 20S)
     // =========================================================================
     private void kunciLokasiSangatAkurat() {
-        ucapkanSuara("Mencari konstelasi satelit murni di langit. Pastikan di area terbuka.");
-        info.setText("Memindai satelit langit (Min 7 satelit, Maks 3m)...");
+        ucapkanSuara("Mencari sinyal murni langit terbuka.");
+        info.setText("Mengunci sinyal murni (Anti-Payung, Maks 3m)...");
 
         final LocationManager tempLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
         if (tempLocationManager == null) {
@@ -362,29 +362,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             return;
         }
 
-        jumlahSatelitAktif = 0;
         final Handler timeoutHandler = new Handler();
         final LocationListener[] activeListenerHolder = new LocationListener[1];
-
-        // Pendengar NMEA untuk memvalidasi jumlah satelit asli dari langit
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            nmeaListener = new OnNmeaMessageListener() {
-                @Override
-                public void onNmeaMessage(String message, long timestamp) {
-                    if (message.startsWith("$GPGGA") || message.startsWith("$GNGGA")) {
-                        String[] tokens = message.split(",");
-                        if (tokens.length > 7 && !tokens[7].isEmpty()) {
-                            try {
-                                jumlahSatelitAktif = Integer.parseInt(tokens[7]);
-                            } catch (NumberFormatException e) {}
-                        }
-                    }
-                }
-            };
-            try {
-                tempLocationManager.addNmeaListener(nmeaListener, null);
-            } catch (SecurityException e) {}
-        }
 
         final Runnable timeoutRunnable = new Runnable() {
             @Override
@@ -394,11 +373,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                         tempLocationManager.removeUpdates(activeListenerHolder[0]);
                     } catch (Exception e) {}
                 }
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && nmeaListener != null) {
-                    try { tempLocationManager.removeNmeaListener(nmeaListener); } catch (Exception e) {}
-                }
-                ucapkanSuara("Lokasi akurat tidak ditemukan. Satelit terhalang payung atau atap.");
-                info.setText("Penguncian gagal: Satelit tidak cukup (Timeout 20s).");
+                ucapkanSuara("Lokasi akurat tidak ditemukan karena terhalang.");
+                info.setText("Penguncian gagal: Lokasi akurat tidak ditemukan karena terhalang.");
             }
         };
 
@@ -406,55 +382,37 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         timeoutHandler.postDelayed(timeoutRunnable, 20000);
 
         final LocationListener gpsIsolasiListener = new LocationListener() {
-            private Location titikSebelumnya = null;
-
             @Override
             public void onLocationChanged(final Location loc) {
                 if (loc == null) return;
 
+                // 1. Tolak keras jika bukan murni GPS satelit
                 if (!LocationManager.GPS_PROVIDER.equals(loc.getProvider())) return;
 
-                long waktuSekarang = System.currentTimeMillis();
-                if (Math.abs(waktuSekarang - loc.getTime()) > 1500) return;
-
-                if (titikSebelumnya != null) {
-                    float[] jarakLompat = new float[1];
-                    Location.distanceBetween(
-                        titikSebelumnya.getLatitude(), titikSebelumnya.getLongitude(),
-                        loc.getLatitude(), loc.getLongitude(),
-                        jarakLompat
-                    );
-                    if (jarakLompat[0] > 2.0f) {
-                        titikSebelumnya = loc;
-                        return; 
-                    }
+                // 2. ULTIMATE FRESHNESS CHECK: Selisih waktu harus kurang dari 500 milidetik (mencegah cache/payung)
+                long selisihWaktu = Math.abs(System.currentTimeMillis() - loc.getTime());
+                if (selisihWaktu > 500) {
+                    return; 
                 }
-                titikSebelumnya = loc;
 
+                // 3. Validasi Akurasi Ketat Maksimal 3 Meter
                 if (!loc.hasAccuracy()) return;
                 float akurasi = loc.getAccuracy();
 
-                // Syarat Ketat: Akurasi <= 3m DAN jumlah satelit aktif dari langit minimal 7 buah (payung akan menjatuhkan angka ini)
                 if (akurasi <= 3.0f) {
-                    if (jumlahSatelitAktif >= 7 || jumlahSatelitAktif == 0) {
-                        timeoutHandler.removeCallbacks(timeoutRunnable);
-                        try {
-                            tempLocationManager.removeUpdates(this);
-                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && nmeaListener != null) {
-                                tempLocationManager.removeNmeaListener(nmeaListener);
-                            }
-                        } catch (Exception e) {}
+                    timeoutHandler.removeCallbacks(timeoutRunnable);
+                    try {
+                        tempLocationManager.removeUpdates(this);
+                    } catch (Exception e) {}
 
-                        final double finalLat = loc.getLatitude();
-                        final double finalLon = loc.getLongitude();
+                    final double finalLat = loc.getLatitude();
+                    final double finalLon = loc.getLongitude();
 
-                        ucapkanSuara("Sinyal satelit langit terverifikasi. Akurasi " + (int)akurasi + " meter.");
-                        tampilkanDialogKonfirmasiSimpan(finalLat, finalLon, (int)akurasi);
-                        return;
-                    }
+                    ucapkanSuara("Sinyal langit terbuka terverifikasi. Akurasi " + (int)akurasi + " meter.");
+                    tampilkanDialogKonfirmasiSimpan(finalLat, finalLon, (int)akurasi);
+                } else {
+                    info.setText("Menunggu langit terbuka... Akurasi: ± " + (int)akurasi + "m");
                 }
-                
-                info.setText("Memindai langit... Akurasi: ± " + (int)akurasi + "m | Satelit: " + (jumlahSatelitAktif > 0 ? jumlahSatelitAktif : "Menunggu..."));
             }
 
             @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
@@ -465,7 +423,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         activeListenerHolder[0] = gpsIsolasiListener;
 
         try {
-            tempLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0.0f, gpsIsolasiListener);
+            tempLocationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 0.0f, gpsIsolasiListener);
         } catch (SecurityException e) {
             timeoutHandler.removeCallbacks(timeoutRunnable);
             ucapkanSuara("Gagal mengakses GPS.");
@@ -1162,9 +1120,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (locationManager != null) {
             if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                 locationManager.removeUpdates(this);
-            }
-            if (nmeaListener != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                try { locationManager.removeNmeaListener(nmeaListener); } catch (Exception e) {}
             }
         }
         hentikanSensorKompas();
