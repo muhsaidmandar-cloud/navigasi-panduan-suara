@@ -5,6 +5,7 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -14,6 +15,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
 import android.speech.tts.TextToSpeech;
 import android.graphics.Color;
@@ -23,6 +25,9 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -66,6 +71,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private List<InstruksiRute> daftarInstruksi = new ArrayList<>();
     private int indexInstruksiAktif = 0;
 
+    private static final int PERMISSION_REQUEST_CODE = 100;
+
     public static class LokasiTersimpan {
         String nama;
         double lat;
@@ -97,10 +104,22 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     public void onCreate(Bundle state) {
         super.onCreate(state);
         setVolumeControlStream(selectedAudioStream);
+        cekDanMintaIzinLokasi();
         muatDataLokasiDariPrefs();
         inisialisasiSensorKompasPro();
         inisialisasiTtsMandiri();
         tampilkanMenuUtama();
+    }
+
+    private void cekDanMintaIzinLokasi() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                }, PERMISSION_REQUEST_CODE);
+            }
+        }
     }
 
     private void inisialisasiSensorKompasPro() {
@@ -215,7 +234,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         });
         box.addView(btnCekPosisi);
 
-        // --- FITUR PENGUNCIAN LOKASI 100% UTUH TIDAK DIGANGGU ---
         Button btnKunciAkurat = new Button(this);
         btnKunciAkurat.setText("KUNCI POSISI AKURAT (MAX 3M)");
         btnKunciAkurat.setOnClickListener(new View.OnClickListener() {
@@ -338,7 +356,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    // --- KUNCI LOKASI AKURAT (DIJAMIN TIDAK DISENTUH/DIUBAH) ---
     private void kunciLokasiSangatAkurat() {
         Location loc = null;
         try {
@@ -600,7 +617,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         try {
             locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
             if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 1.0f, this);
+                if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 1.0f, this);
+                }
             }
         } catch (SecurityException e) {}
     }
@@ -609,7 +628,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         Location loc = null;
         try {
             if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                }
             }
         } catch (Exception e) {}
 
@@ -769,7 +790,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         Location loc = null;
         try {
             if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    loc = locationManager.getLastKnownLocation(LocationManager.GPS_PROVIDER);
+                }
             }
         } catch (Exception e) {}
 
@@ -872,7 +895,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             }
 
-            // --- NAVIGASI DENGAN FILTER AKURASI UNTUK TIBA DI TUJUAN ---
             if (isNavigating && lokasiNavigasiAktif != null) {
                 if (!daftarInstruksi.isEmpty() && indexInstruksiAktif < daftarInstruksi.size()) {
                     InstruksiRute instruksi = daftarInstruksi.get(indexInstruksiAktif);
@@ -885,7 +907,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     }
 
                     if (hasilJarak[0] <= 6.0f) {
-                        // Pastikan akurasi GPS valid (tidak melompat buruk di atas 12 meter)
                         if (akurasiGps <= 12.0f) {
                             indexInstruksiAktif++;
                             if (indexInstruksiAktif < daftarInstruksi.size()) {
@@ -911,7 +932,11 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (tts != null) {
             try { tts.stop(); tts.shutdown(); } catch (Exception e) {}
         }
-        if (locationManager != null) locationManager.removeUpdates(this);
+        if (locationManager != null) {
+            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                locationManager.removeUpdates(this);
+            }
+        }
         hentikanSensorKompas();
         super.onDestroy();
     }
