@@ -17,6 +17,7 @@ import android.media.AudioManager;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.speech.tts.TextToSpeech;
 import android.graphics.Color;
 import android.view.Gravity;
@@ -70,6 +71,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private List<String> riwayatTempatDiumumkan = new ArrayList<>();
     private List<InstruksiRute> daftarInstruksi = new ArrayList<>();
     private int indexInstruksiAktif = 0;
+
+    // Variabel pendukung Eksplorasi Real-Time ala Lazarillo
+    private Handler explorationHandler = new Handler();
+    private Runnable explorationRunnable;
 
     private static final int PERMISSION_REQUEST_CODE = 100;
 
@@ -263,23 +268,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 updateTeksTombolEksplorasi(btnToggleEksplorasi);
                 if (isEksplorasiFiturAktif) {
                     riwayatTempatDiumumkan.clear();
-                    lastExplorationLat = 0.0;
-                    lastExplorationLon = 0.0;
                     mulaiSensorKompas();
                     mulaiMendengarkanGPS();
-                    ucapkanSuara("Eksplorasi pro diaktifkan.");
+                    ucapkanSuara("Eksplorasi real-time diaktifkan.");
                     
-                    try {
-                        if (locationManager != null && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-                            Location loc = dapatkanLokasiTerakhir();
-                            if (loc != null) {
-                                float initialSpeed = loc.hasSpeed() ? loc.getSpeed() : 0.0f;
-                                float initialHeading = (initialSpeed > 3.0f && loc.hasBearing()) ? loc.getBearing() : currentAzimuth;
-                                new EksplorasiKompasProTask().execute(loc.getLatitude(), loc.getLongitude(), 40.0, (double)initialHeading);
-                            }
-                        }
-                    } catch (Exception e) {}
+                    // Mulai perulangan otomatis real-time ala Lazarillo
+                    mulaiEksplorasiRealTime();
                 } else {
+                    hentikanEksplorasiRealTime();
                     hentikanSensorKompas();
                     ucapkanSuara("Eksplorasi dinonaktifkan.");
                 }
@@ -338,6 +334,35 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.addView(btnPengaturanTts);
         
         setContentView(box);
+    }
+
+    private void mulaiEksplorasiRealTime() {
+        if (explorationRunnable == null) {
+            explorationRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (isEksplorasiFiturAktif && !isNavigating) {
+                        Location loc = dapatkanLokasiTerakhir();
+                        if (loc != null) {
+                            double cLat = loc.getLatitude();
+                            double cLon = loc.getLongitude();
+                            float headingGuna = currentAzimuth;
+
+                            new EksplorasiKompasProTask().execute(cLat, cLon, 40.0, (double) headingGuna);
+                        }
+                    }
+                    // Loop setiap 6 detik secara real-time baik saat diam maupun berjalan
+                    explorationHandler.postDelayed(this, 6000);
+                }
+            };
+        }
+        explorationHandler.post(explorationRunnable);
+    }
+
+    private void hentikanEksplorasiRealTime() {
+        if (explorationHandler != null && explorationRunnable != null) {
+            explorationHandler.removeCallbacks(explorationRunnable);
+        }
     }
 
     private void hentikanNavigasiTotal() {
@@ -712,7 +737,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             try {
                 Bundle params = new Bundle();
                 params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, selectedAudioStream);
-                // Menggunakan QUEUE_ADD agar antrean suara tidak saling potong dan tidak membisu
                 tts.speak(teks, TextToSpeech.QUEUE_ADD, params, null);
             } catch (Exception e) {}
         }
@@ -826,7 +850,9 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             sedangMemindaiOtomatis = false;
             if (result != null && !result.isEmpty()) {
                 StringBuilder sb = new StringBuilder();
-                for (TempatPro t : result) {
+                int limit = Math.min(result.size(), 2);
+                for (int i = 0; i < limit; i++) {
+                    TempatPro t = result.get(i);
                     float[] dist = new float[1];
                     Location.distanceBetween(cLat, cLon, t.lat, t.lon, dist);
                     int jarak = (int) dist[0];
@@ -858,10 +884,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
                     if (!riwayatTempatDiumumkan.contains(t.nama)) {
                         riwayatTempatDiumumkan.add(t.nama);
-                        if (riwayatTempatDiumumkan.size() > 40) riwayatTempatDiumumkan.remove(0);
+                        if (riwayatTempatDiumumkan.size() > 15) riwayatTempatDiumumkan.remove(0);
                     }
                 }
-                info.setText("Eksplorasi Pro Aktif:\n" + sb.toString());
+                info.setText("Eksplorasi Real-Time Aktif:\n" + sb.toString());
             }
         }
     }
@@ -957,35 +983,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             double cLat = location.getLatitude();
             double cLon = location.getLongitude();
             float akurasiGps = location.hasAccuracy() ? location.getAccuracy() : 10.0f;
-            float speed = location.hasSpeed() ? location.getSpeed() : 0.0f;
             
-            float thresholdJarakPicu;
-            int radiusPencarianApi;
-            float headingGuna;
-            
-            if (speed > 3.0f && location.hasBearing()) {
-                thresholdJarakPicu = 20.0f; 
-                radiusPencarianApi = 100;   
-                headingGuna = location.getBearing(); 
-            } else {
-                thresholdJarakPicu = 5.0f;  
-                radiusPencarianApi = 40;    
-                headingGuna = currentAzimuth;        
-            }
-
-            if (isEksplorasiFiturAktif && !isNavigating && !sedangMemindaiOtomatis) {
-                float[] dist = new float[1];
-                if (lastExplorationLat == 0.0) {
-                    lastExplorationLat = cLat; lastExplorationLon = cLon;
-                }
-                Location.distanceBetween(lastExplorationLat, lastExplorationLon, cLat, cLon, dist);
-                if (dist[0] >= thresholdJarakPicu) {
-                    lastExplorationLat = cLat; lastExplorationLon = cLon;
-                    sedangMemindaiOtomatis = true;
-                    new EksplorasiKompasProTask().execute(cLat, cLon, (double) radiusPencarianApi, (double) headingGuna);
-                }
-            }
-
             if (isNavigating && lokasiNavigasiAktif != null) {
                 if (!daftarInstruksi.isEmpty() && indexInstruksiAktif < daftarInstruksi.size()) {
                     InstruksiRute instruksi = daftarInstruksi.get(indexInstruksiAktif);
@@ -1021,6 +1019,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
 
     @Override
     protected void onDestroy() {
+        hentikanEksplorasiRealTime();
         if (tts != null) {
             try { tts.stop(); tts.shutdown(); } catch (Exception e) {}
         }
