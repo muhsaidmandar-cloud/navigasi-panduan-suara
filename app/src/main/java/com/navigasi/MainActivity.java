@@ -48,20 +48,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private TextToSpeech tts;
     private boolean isTtsReady = false;
 
-    // Pengaturan Suara & TTS
     private float kecepatanBicara = 1.0f;     
     private String targetTtsEngine = null; 
-
-    // Pilihan Stream Audio
     private int selectedAudioStream = AudioManager.STREAM_MUSIC;
 
-    // Penyimpanan Multi-Lokasi
     private List<LokasiTersimpan> daftarLokasiTersimpan = new ArrayList<>();
     private LokasiTersimpan lokasiNavigasiAktif = null;
     
     private boolean isNavigating = false;
     
-    // Status Eksplorasi Real-Time Dinamis & Cerdas
     private boolean isEksplorasiFiturAktif = false;
     private boolean sedangMemindaiOtomatis = false;
     private double lastExplorationLat = 0.0;
@@ -83,7 +78,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    // --- STRUKTUR INSTRUKSI RUTE DIPERLUAS DENGAN NAMA JALAN ---
     private static class InstruksiRute {
         double lat;
         double lon;
@@ -404,7 +398,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 simpanDataLokasiKePrefs();
                 
                 ucapkanSuara("Lokasi " + namaLokasi + " berhasil disimpan ke daftar.");
-                info.setText("Lokasi Tersimpan:\n" + namaLokasi + "\nLat: " + finalLat + ", Lon: " + finalLon + "\n(Silakan cek melalui menu Kelola Lokasi)");
+                info.setText("Lokasi Tersimpan:\n" + namaLokasi + "\nLat: " + finalLat + ", Lon: " + finalLon);
             }
         });
         builder.setNegativeButton("Batal", null);
@@ -785,7 +779,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         new AmbilRuteTask().execute(sLat, sLon, lokasiNavigasiAktif.lat, lokasiNavigasiAktif.lon);
     }
 
-    // --- PENGAMBILAN RUTE OSRM DENGAN DETAIL NAMA JALAN & PERSIMPANGAN ---
     private class AmbilRuteTask extends AsyncTask<Double, Void, List<InstruksiRute>> {
         @Override
         protected List<InstruksiRute> doInBackground(Double... coords) {
@@ -849,7 +842,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         if (location != null) {
             double cLat = location.getLatitude();
             double cLon = location.getLongitude();
-            
+            float akurasiGps = location.hasAccuracy() ? location.getAccuracy() : 10.0f;
             float speed = location.hasSpeed() ? location.getSpeed() : 0.0f;
             
             float thresholdJarakPicu;
@@ -879,7 +872,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 }
             }
 
-            // --- NAVIGASI BELOKAN & NAMA JALAN REAL-TIME ---
+            // --- NAVIGASI DENGAN FILTER AKURASI UNTUK TIBA DI TUJUAN ---
             if (isNavigating && lokasiNavigasiAktif != null) {
                 if (!daftarInstruksi.isEmpty() && indexInstruksiAktif < daftarInstruksi.size()) {
                     InstruksiRute instruksi = daftarInstruksi.get(indexInstruksiAktif);
@@ -892,13 +885,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                     }
 
                     if (hasilJarak[0] <= 6.0f) {
-                        indexInstruksiAktif++;
-                        if (indexInstruksiAktif < daftarInstruksi.size()) {
-                            InstruksiRute nextInstruksi = daftarInstruksi.get(indexInstruksiAktif);
-                            ucapkanSuara("Lewati persimpangan. " + nextInstruksi.pesanPanduan);
-                        } else {
-                            ucapkanSuara("Anda telah tiba di tujuan.");
-                            isNavigating = false;
+                        // Pastikan akurasi GPS valid (tidak melompat buruk di atas 12 meter)
+                        if (akurasiGps <= 12.0f) {
+                            indexInstruksiAktif++;
+                            if (indexInstruksiAktif < daftarInstruksi.size()) {
+                                InstruksiRute nextInstruksi = daftarInstruksi.get(indexInstruksiAktif);
+                                ucapkanSuara("Lewati persimpangan. " + nextInstruksi.pesanPanduan);
+                            } else {
+                                ucapkanSuara("Anda telah tiba di tujuan " + lokasiNavigasiAktif.nama + ".");
+                                isNavigating = false;
+                            }
                         }
                     }
                 }
