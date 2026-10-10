@@ -20,6 +20,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.speech.tts.TextToSpeech;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -46,7 +47,7 @@ import java.util.Locale;
 
 public class MainActivity extends Activity implements LocationListener, SensorEventListener, TextToSpeech.OnInitListener {
     
-    private TextView infoBanner;
+    private TextView tvAlamatUtama, tvJarakMataAngin;
     private LocationManager locationManager;
     private SensorManager sensorManager;
     private Sensor rotationSensor;
@@ -164,14 +165,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     // ==========================================
-    // TAMPILAN UTAMA PERSIS LAZARILLO
+    // TAMPILAN UTAMA 100% PERSIS LAZARILLO
     // ==========================================
     private void tampilkanHalamanExploration() {
         LinearLayout mainRoot = new LinearLayout(this);
         mainRoot.setOrientation(LinearLayout.VERTICAL);
-        mainRoot.setBackgroundColor(Color.parseColor("#F5F5F5"));
+        mainRoot.setBackgroundColor(Color.parseColor("#EFEFEF")); // Background abu-abu terang
 
-        // 1. TOP BAR (Merah khas Lazarillo)
+        // 1. TOP BAR (Merah Pekat khas Lazarillo)[span_3](start_span)[span_3](end_span)
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setBackgroundColor(Color.parseColor("#D32F2F"));
@@ -186,13 +187,21 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         tvTitleApp.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         topBar.addView(tvTitleApp);
 
-        Button btnPause = createTopBarButton("⏸");
-        btnPause.setOnClickListener(v -> {
-            isEksplorasiFiturAktif = false;
-            hentikanEksplorasiRealTime();
-            ucapkanSuara("Eksplorasi dijeda.");
+        // Tombol Bilah Atas: Play/Pause, Target GPS, Search, Menu Garis Tiga[span_4](start_span)[span_4](end_span)
+        Button btnPlayPause = createTopBarButton("▶");
+        btnPlayPause.setOnClickListener(v -> {
+            isEksplorasiFiturAktif = !isEksplorasiFiturAktif;
+            if (isEksplorasiFiturAktif) {
+                btnPlayPause.setText("⏸");
+                mulaiEksplorasiRealTime();
+                ucapkanSuara("Eksplorasi dilanjutkan.");
+            } else {
+                btnPlayPause.setText("▶");
+                hentikanEksplorasiRealTime();
+                ucapkanSuara("Eksplorasi dijeda.");
+            }
         });
-        topBar.addView(btnPause);
+        topBar.addView(btnPlayPause);
 
         Button btnTarget = createTopBarButton("◎");
         btnTarget.setOnClickListener(v -> kunciLokasiSangatAkurat());
@@ -216,33 +225,47 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setPadding(20, 20, 20, 20);
 
-        // 2. BANNER STATUS TEMPAT TERDEKAT DI ATAS
+        // 2. KARTU BANNER ALAMAT DI ATAS (Kotak Abu-Abu Melengkung dengan Ikon Lokasi)[span_5](start_span)[span_5](end_span)
         LinearLayout bannerCard = new LinearLayout(this);
-        bannerCard.setOrientation(LinearLayout.VERTICAL);
-        bannerCard.setBackgroundColor(Color.parseColor("#D32F2F"));
-        bannerCard.setPadding(28, 24, 28, 24);
+        bannerCard.setOrientation(LinearLayout.HORIZONTAL);
+        bannerCard.setGravity(Gravity.CENTER_VERTICAL);
         
-        TextView tvBannerHeader = new TextView(this);
-        tvBannerHeader.setText("Memindai Lingkungan Sekitar...");
-        tvBannerHeader.setTextColor(Color.WHITE);
-        tvBannerHeader.setTextSize(17);
-        tvBannerHeader.setTypeface(null, android.graphics.Typeface.BOLD);
-        bannerCard.addView(tvBannerHeader);
+        GradientDrawable bannerBg = new GradientDrawable();
+        bannerBg.setColor(Color.parseColor("#9E9E9E")); // Warna abu-abu kartu Lazarillo
+        bannerBg.setCornerRadius(24);
+        bannerCard.setBackground(bannerBg);
+        bannerCard.setPadding(24, 24, 24, 24);
 
-        infoBanner = new TextView(this);
-        infoBanner.setText("Sistem aktif mendeteksi tempat terdekat.");
-        infoBanner.setTextColor(Color.WHITE);
-        infoBanner.setTextSize(14);
-        infoBanner.setPadding(0, 6, 0, 0);
-        bannerCard.addView(infoBanner);
+        TextView iconPin = new TextView(this);
+        iconPin.setText("📍");
+        iconPin.setTextSize(32);
+        iconPin.setPadding(0, 0, 20, 0);
+        bannerCard.addView(iconPin);
 
+        LinearLayout textContainer = new LinearLayout(this);
+        textContainer.setOrientation(LinearLayout.VERTICAL);
+        textContainer.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+
+        tvAlamatUtama = new TextView(this);
+        tvAlamatUtama.setText("Memindai posisi GPS...");
+        tvAlamatUtama.setTextColor(Color.WHITE);
+        tvAlamatUtama.setTextSize(16);
+        tvAlamatUtama.setTypeface(null, android.graphics.Typeface.BOLD);
+        textContainer.addView(tvAlamatUtama);
+
+        bannerCard.addView(textContainer);
         contentLayout.addView(bannerCard);
 
-        View spacer = new View(this);
-        spacer.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 24));
-        contentLayout.addView(spacer);
+        // Teks Jarak & Mata Angin di Bawah Kartu (Contoh: "14 m to the East")[span_6](start_span)[span_6](end_span)
+        tvJarakMataAngin = new TextView(this);
+        tvJarakMataAngin.setText("Menunggu sinyal akurat...");
+        tvJarakMataAngin.setTextColor(Color.parseColor("#212121"));
+        tvJarakMataAngin.setTextSize(15);
+        tvJarakMataAngin.setTypeface(null, android.graphics.Typeface.BOLD);
+        tvJarakMataAngin.setPadding(8, 12, 0, 24);
+        contentLayout.addView(tvJarakMataAngin);
 
-        // 3. GRID MENU KATEGORI (11 Menu Persis Gambar Lazarillo)
+        // 3. GRID 11 MENU KATEGORI LINGKARAN MERAH[span_7](start_span)[span_7](end_span)
         GridLayout gridMenu = new GridLayout(this);
         gridMenu.setColumnCount(3);
         gridMenu.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
@@ -263,7 +286,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         scrollView.addView(contentLayout);
         mainRoot.addView(scrollView);
 
-        // 4. BOTTOM NAVIGATION BAR (Menu Bawah)
+        // 4. BOTTOM NAVIGATION BAR (Menu Bawah: Exploration, Favourites, News, Settings)[span_8](start_span)[span_8](end_span)
         LinearLayout bottomBar = new LinearLayout(this);
         bottomBar.setOrientation(LinearLayout.HORIZONTAL);
         bottomBar.setBackgroundColor(Color.parseColor("#FAFAFA"));
@@ -289,7 +312,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         btn.setTextColor(Color.WHITE);
         btn.setTextSize(18);
         btn.setBackgroundColor(Color.TRANSPARENT);
-        btn.setPadding(12, 0, 12, 0);
+        btn.setPadding(8, 0, 8, 0);
         return btn;
     }
 
@@ -305,12 +328,18 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         itemBox.getLayoutParams().width = width;
         itemBox.setPadding(4, 12, 4, 12);
 
+        // Bentuk Lingkaran Merah untuk Ikon Kategori[span_9](start_span)[span_9](end_span)
         TextView circleIcon = new TextView(this);
         circleIcon.setText(emoji);
         circleIcon.setTextSize(24);
         circleIcon.setGravity(Gravity.CENTER);
         circleIcon.setTextColor(Color.WHITE);
-        circleIcon.setBackgroundColor(Color.parseColor("#D32F2F"));
+        
+        GradientDrawable circleBg = new GradientDrawable();
+        circleBg.setColor(Color.parseColor("#D32F2F"));
+        circleBg.setShape(GradientDrawable.OVAL);
+        circleIcon.setBackground(circleBg);
+        
         int size = 125;
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(size, size);
         params.gravity = Gravity.CENTER_HORIZONTAL;
@@ -351,15 +380,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void tampilkanRiwayatPengumuman() {
         if (riwayatTempatDiumumkan.isEmpty()) {
             ucapkanSuara("Belum ada tempat yang baru diumumkan.");
-            infoBanner.setText("Riwayat kosong.");
+            tvAlamatUtama.setText("Riwayat kosong.");
             return;
         }
-        StringBuilder sb = new StringBuilder("Tempat yang baru diumumkan:\n");
+        StringBuilder sb = new StringBuilder("Riwayat: ");
         for (String tempat : riwayatTempatDiumumkan) {
-            sb.append("- ").append(tempat).append("\n");
+            sb.append(tempat).append(", ");
         }
-        infoBanner.setText(sb.toString());
-        ucapkanSuara("Menampilkan " + riwayatTempatDiumumkan.size() + " tempat terakhir.");
+        tvAlamatUtama.setText(sb.toString());
+        ucapkanSuara("Menampilkan tempat terakhir.");
     }
 
     private void jalankanPencarianKategori(String key, String namaKategori) {
@@ -428,13 +457,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 TempatPro t = result.get(0);
                 float[] dist = new float[1];
                 Location.distanceBetween(cLat, cLon, t.lat, t.lon, dist);
-                String pesan = t.nama + ", berjarak sekitar " + (int)dist[0] + " meter.";
+                String pesan = t.nama + ", berjarak " + (int)dist[0] + " meter.";
                 ucapkanSuara(pesan);
-                infoBanner.setText(namaKat + " Terdekat:\n" + pesan);
+                tvAlamatUtama.setText(t.nama);
+                tvJarakMataAngin.setText((int)dist[0] + " m terdekat");
                 lokasiNavigasiAktif = new LokasiTersimpan(t.nama, t.lat, t.lon);
             } else {
                 ucapkanSuara("Tidak ditemukan " + namaKat + " di sekitar Anda.");
-                infoBanner.setText("Pencarian " + namaKat + " nihil.");
+                tvAlamatUtama.setText("Tidak ditemukan " + namaKat);
             }
         }
     }
@@ -494,7 +524,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.addView(tvTitle);
 
         TextView tvContent = new TextView(this);
-        tvContent.setText("\nTidak ada pengumuman atau berita terbaru saat ini. Sistem navigasi berjalan normal.");
+        tvContent.setText("\nTidak ada pengumuman atau berita terbaru saat ini.");
         tvContent.setTextSize(16);
         box.addView(tvContent);
 
@@ -664,7 +694,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
             if (hasil != null) {
                 String namaPendek = hasil.split(",")[0].trim();
                 ucapkanSuara(namaPendek + " ditemukan.");
-                infoBanner.setText("Hasil Pencarian:\n" + namaPendek);
+                tvAlamatUtama.setText(namaPendek);
             } else {
                 ucapkanSuara("Lokasi tidak ditemukan.");
             }
@@ -717,9 +747,20 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 TempatPro t = result.get(0);
                 float[] dist = new float[1];
                 Location.distanceBetween(cLat, cLon, t.lat, t.lon, dist);
-                String teks = t.nama + ", " + (int)dist[0] + " meter di sekitar Anda.";
-                ucapkanSuara(teks);
-                infoBanner.setText(t.nama + "\n" + (int)dist[0] + " meter di sekitar Anda.");
+                
+                // Menghitung arah mata angin kasar berdasarkan azimuth kompas
+                String arahMataAngin = "to the East";
+                if (currentAzimuth >= 45 && currentAzimuth < 135) arahMataAngin = "to the East";
+                else if (currentAzimuth >= 135 && currentAzimuth < 225) arahMataAngin = "to the South";
+                else if (currentAzimuth >= 225 && currentAzimuth < 315) arahMataAngin = "to the West";
+                else arahMataAngin = "to the North";
+
+                String teksPengumuman = t.nama;
+                String teksJarak = (int)dist[0] + " m " + arahMataAngin;
+
+                ucapkanSuara(t.nama + ", " + (int)dist[0] + " meter.");
+                tvAlamatUtama.setText(teksPengumuman);
+                tvJarakMataAngin.setText(teksJarak);
                 
                 if (!riwayatTempatDiumumkan.contains(t.nama)) {
                     riwayatTempatDiumumkan.add(t.nama);
