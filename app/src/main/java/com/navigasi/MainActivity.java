@@ -3,7 +3,6 @@ package com.navigasi;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
@@ -21,6 +20,7 @@ import android.os.Handler;
 import android.speech.tts.TextToSpeech;
 import android.graphics.Color;
 import android.graphics.drawable.GradientDrawable;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -170,48 +170,54 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     private void tampilkanHalamanExploration() {
         LinearLayout mainRoot = new LinearLayout(this);
         mainRoot.setOrientation(LinearLayout.VERTICAL);
-        mainRoot.setBackgroundColor(Color.parseColor("#EFEFEF")); // Background abu-abu terang
+        mainRoot.setBackgroundColor(Color.parseColor("#EFEFEF"));
 
-        // 1. TOP BAR (Merah Pekat khas Lazarillo)[span_3](start_span)[span_3](end_span)
+        // 1. TOP BAR (Merah Pekat khas Lazarillo)[span_37](start_span)[span_37](end_span)[span_38](start_span)[span_38](end_span)
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setBackgroundColor(Color.parseColor("#D32F2F"));
-        topBar.setPadding(24, 20, 24, 20);
+        topBar.setPadding(16, 16, 16, 16);
         topBar.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvTitleApp = new TextView(this);
-        tvTitleApp.setText("Exploration");
+        tvTitleApp.setText("Exploration");[span_39](start_span)[span_39](end_span)[span_40](start_span)[span_40](end_span)
         tvTitleApp.setTextColor(Color.WHITE);
-        tvTitleApp.setTextSize(20);
+        tvTitleApp.setTextSize(18);
         tvTitleApp.setTypeface(null, android.graphics.Typeface.BOLD);
-        tvTitleApp.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tvTitleApp.setSingleLine(true);
+        tvTitleApp.setEllipsize(TextUtils.TruncateAt.END);
+        
+        LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        tvTitleApp.setLayoutParams(titleParams);
         topBar.addView(tvTitleApp);
 
-        // Tombol Bilah Atas: Play/Pause, Target GPS, Search, Menu Garis Tiga[span_4](start_span)[span_4](end_span)
-        Button btnPlayPause = createTopBarButton("▶");
+        // Tombol Bilah Atas dengan penamaan pembaca layar identik Lazarillo[span_41](start_span)[span_41](end_span)[span_42](start_span)[span_42](end_span)
+        Button btnPlayPause = createTopBarButton("▶", "Pause");
         btnPlayPause.setOnClickListener(v -> {
             isEksplorasiFiturAktif = !isEksplorasiFiturAktif;
             if (isEksplorasiFiturAktif) {
                 btnPlayPause.setText("⏸");
+                btnPlayPause.setContentDescription("Pause");
                 mulaiEksplorasiRealTime();
-                ucapkanSuara("Eksplorasi dilanjutkan.");
+                ucapkanSuara("Exploration resumed.");
             } else {
                 btnPlayPause.setText("▶");
+                btnPlayPause.setContentDescription("Play");
                 hentikanEksplorasiRealTime();
-                ucapkanSuara("Eksplorasi dijeda.");
+                ucapkanSuara("Exploration paused.");
             }
         });
         topBar.addView(btnPlayPause);
 
-        Button btnTarget = createTopBarButton("◎");
-        btnTarget.setOnClickListener(v -> kunciLokasiSangatAkurat());
+        Button btnTarget = createTopBarButton("◎", "Current Location");[span_43](start_span)[span_43](end_span)[span_44](start_span)[span_44](end_span)
+        btnTarget.setOnClickListener(v -> perbaruiPosisiGPSManual());
         topBar.addView(btnTarget);
 
-        Button btnSearch = createTopBarButton("🔍");
+        Button btnSearch = createTopBarButton("🔍", "Search");[span_45](start_span)[span_45](end_span)[span_46](start_span)[span_46](end_span)
         btnSearch.setOnClickListener(v -> tampilkanDialogPencarianLokasi());
         topBar.addView(btnSearch);
 
-        Button btnMenu = createTopBarButton("≡");
+        Button btnMenu = createTopBarButton("≡", "Menu");[span_47](start_span)[span_47](end_span)[span_48](start_span)[span_48](end_span)
         btnMenu.setOnClickListener(v -> tampilkanHalamanFavourites());
         topBar.addView(btnMenu);
 
@@ -225,16 +231,17 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setPadding(20, 20, 20, 20);
 
-        // 2. KARTU BANNER ALAMAT DI ATAS (Kotak Abu-Abu Melengkung dengan Ikon Lokasi)[span_5](start_span)[span_5](end_span)
+        // 2. KARTU BANNER ALAMAT DI ATAS[span_49](start_span)[span_49](end_span)
         LinearLayout bannerCard = new LinearLayout(this);
         bannerCard.setOrientation(LinearLayout.HORIZONTAL);
         bannerCard.setGravity(Gravity.CENTER_VERTICAL);
         
         GradientDrawable bannerBg = new GradientDrawable();
-        bannerBg.setColor(Color.parseColor("#9E9E9E")); // Warna abu-abu kartu Lazarillo
+        bannerBg.setColor(Color.parseColor("#9E9E9E"));
         bannerBg.setCornerRadius(24);
         bannerCard.setBackground(bannerBg);
         bannerCard.setPadding(24, 24, 24, 24);
+        bannerCard.setContentDescription("Location Banner");
 
         TextView iconPin = new TextView(this);
         iconPin.setText("📍");
@@ -247,7 +254,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         textContainer.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
 
         tvAlamatUtama = new TextView(this);
-        tvAlamatUtama.setText("Memindai posisi GPS...");
+        tvAlamatUtama.setText("Acquiring GPS position...");
         tvAlamatUtama.setTextColor(Color.WHITE);
         tvAlamatUtama.setTextSize(16);
         tvAlamatUtama.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -256,46 +263,45 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         bannerCard.addView(textContainer);
         contentLayout.addView(bannerCard);
 
-        // Teks Jarak & Mata Angin di Bawah Kartu (Contoh: "14 m to the East")[span_6](start_span)[span_6](end_span)
         tvJarakMataAngin = new TextView(this);
-        tvJarakMataAngin.setText("Menunggu sinyal akurat...");
+        tvJarakMataAngin.setText("Waiting for signal...");
         tvJarakMataAngin.setTextColor(Color.parseColor("#212121"));
         tvJarakMataAngin.setTextSize(15);
         tvJarakMataAngin.setTypeface(null, android.graphics.Typeface.BOLD);
         tvJarakMataAngin.setPadding(8, 12, 0, 24);
         contentLayout.addView(tvJarakMataAngin);
 
-        // 3. GRID 11 MENU KATEGORI LINGKARAN MERAH[span_7](start_span)[span_7](end_span)
+        // 3. GRID 11 MENU KATEGORI LINGKARAN MERAH (Persis Lazarillo)[span_50](start_span)[span_50](end_span)[span_51](start_span)[span_51](end_span)
         GridLayout gridMenu = new GridLayout(this);
         gridMenu.setColumnCount(3);
         gridMenu.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
 
-        addMenuCard(gridMenu, "Recently announced", "⏱", "recently");
-        addMenuCard(gridMenu, "Transport", "🚌", "transport");
-        addMenuCard(gridMenu, "Banks and ATMs", "🏧", "banks");
-        addMenuCard(gridMenu, "Health", "➕", "health");
-        addMenuCard(gridMenu, "Food", "🍽", "food");
-        addMenuCard(gridMenu, "Stores", "🛍", "stores");
-        addMenuCard(gridMenu, "Arts and entertainment", "🎭", "arts");
-        addMenuCard(gridMenu, "Public buildings", "🏢", "public");
-        addMenuCard(gridMenu, "Education facilities", "🛠", "education");
-        addMenuCard(gridMenu, "Pubs and clubs", "🍸", "pubs");
-        addMenuCard(gridMenu, "Lodging", "🏨", "lodging");
+        addMenuCard(gridMenu, "Recently announced", "⏱", "recently");[span_52](start_span)[span_52](end_span)[span_53](start_span)[span_53](end_span)
+        addMenuCard(gridMenu, "Transport", "🚌", "transport");[span_54](start_span)[span_54](end_span)[span_55](start_span)[span_55](end_span)
+        addMenuCard(gridMenu, "Banks and ATMs", "🏧", "banks");[span_56](start_span)[span_56](end_span)[span_57](start_span)[span_57](end_span)
+        addMenuCard(gridMenu, "Health", "➕", "health");[span_58](start_span)[span_58](end_span)[span_59](start_span)[span_59](end_span)
+        addMenuCard(gridMenu, "Food", "🍽", "food");[span_60](start_span)[span_60](end_span)[span_61](start_span)[span_61](end_span)
+        addMenuCard(gridMenu, "Stores", "🛍", "stores");[span_62](start_span)[span_62](end_span)[span_63](start_span)[span_63](end_span)
+        addMenuCard(gridMenu, "Arts and entertainment", "🎭", "arts");[span_64](start_span)[span_64](end_span)[span_65](start_span)[span_65](end_span)
+        addMenuCard(gridMenu, "Public buildings", "🏢", "public");[span_66](start_span)[span_66](end_span)[span_67](start_span)[span_67](end_span)
+        addMenuCard(gridMenu, "Education facilities", "🛠", "education");[span_68](start_span)[span_68](end_span)[span_69](start_span)[span_69](end_span)
+        addMenuCard(gridMenu, "Pubs and clubs", "🍸", "pubs");[span_70](start_span)[span_70](end_span)[span_71](start_span)[span_71](end_span)
+        addMenuCard(gridMenu, "Lodging", "🏨", "lodging");[span_72](start_span)[span_72](end_span)[span_73](start_span)[span_73](end_span)
 
         contentLayout.addView(gridMenu);
         scrollView.addView(contentLayout);
         mainRoot.addView(scrollView);
 
-        // 4. BOTTOM NAVIGATION BAR (Menu Bawah: Exploration, Favourites, News, Settings)[span_8](start_span)[span_8](end_span)
+        // 4. BOTTOM NAVIGATION BAR (Persis Lazarillo)[span_74](start_span)[span_74](end_span)[span_75](start_span)[span_75](end_span)
         LinearLayout bottomBar = new LinearLayout(this);
         bottomBar.setOrientation(LinearLayout.HORIZONTAL);
         bottomBar.setBackgroundColor(Color.parseColor("#FAFAFA"));
         bottomBar.setPadding(8, 12, 8, 12);
 
-        bottomBar.addView(createBottomNavItem("🧭\nExploration", true, v -> tampilkanHalamanExploration()));
-        bottomBar.addView(createBottomNavItem("⭐\nFavourites", false, v -> tampilkanHalamanFavourites()));
-        bottomBar.addView(createBottomNavItem("🔔\nNews", false, v -> tampilkanHalamanNews()));
-        bottomBar.addView(createBottomNavItem("⚙\nSettings", false, v -> tampilkanHalamanSettings()));
+        bottomBar.addView(createBottomNavItem("🧭\nExploration", "Exploration", true, v -> tampilkanHalamanExploration()));[span_76](start_span)[span_76](end_span)[span_77](start_span)[span_77](end_span)
+        bottomBar.addView(createBottomNavItem("⭐\nFavourites", "Favourites", false, v -> tampilkanHalamanFavourites()));[span_78](start_span)[span_78](end_span)[span_79](start_span)[span_79](end_span)
+        bottomBar.addView(createBottomNavItem("🔔\nNews", "News", false, v -> tampilkanHalamanNews()));[span_80](start_span)[span_80](end_span)[span_81](start_span)[span_81](end_span)
+        bottomBar.addView(createBottomNavItem("⚙\nSettings", "Settings", false, v -> tampilkanHalamanSettings()));[span_82](start_span)[span_82](end_span)[span_83](start_span)[span_83](end_span)
 
         mainRoot.addView(bottomBar);
         setContentView(mainRoot);
@@ -306,13 +312,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         mulaiEksplorasiRealTime();
     }
 
-    private Button createTopBarButton(String symbol) {
+    private Button createTopBarButton(String symbol, String accessibilityDesc) {
         Button btn = new Button(this);
         btn.setText(symbol);
         btn.setTextColor(Color.WHITE);
         btn.setTextSize(18);
         btn.setBackgroundColor(Color.TRANSPARENT);
         btn.setPadding(8, 0, 8, 0);
+        btn.setContentDescription(accessibilityDesc);
         return btn;
     }
 
@@ -327,8 +334,8 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         ));
         itemBox.getLayoutParams().width = width;
         itemBox.setPadding(4, 12, 4, 12);
+        itemBox.setContentDescription(title);
 
-        // Bentuk Lingkaran Merah untuk Ikon Kategori[span_9](start_span)[span_9](end_span)
         TextView circleIcon = new TextView(this);
         circleIcon.setText(emoji);
         circleIcon.setTextSize(24);
@@ -355,7 +362,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         itemBox.addView(tvLabel);
 
         itemBox.setOnClickListener(v -> {
-            ucapkanSuara("Mencari " + title + "...");
+            ucapkanSuara("Searching for " + title + "...");
             if (categoryKey.equals("recently")) {
                 tampilkanRiwayatPengumuman();
             } else {
@@ -366,29 +373,30 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         grid.addView(itemBox);
     }
 
-    private TextView createBottomNavItem(String label, boolean isActive, View.OnClickListener listener) {
+    private TextView createBottomNavItem(String label, String accessibilityDesc, boolean isActive, View.OnClickListener listener) {
         TextView tv = new TextView(this);
         tv.setText(label);
         tv.setTextSize(11);
         tv.setGravity(Gravity.CENTER);
         tv.setTextColor(isActive ? Color.parseColor("#D32F2F") : Color.parseColor("#666666"));
         tv.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tv.setContentDescription(accessibilityDesc);
         tv.setOnClickListener(listener);
         return tv;
     }
 
     private void tampilkanRiwayatPengumuman() {
         if (riwayatTempatDiumumkan.isEmpty()) {
-            ucapkanSuara("Belum ada tempat yang baru diumumkan.");
-            tvAlamatUtama.setText("Riwayat kosong.");
+            ucapkanSuara("No recently announced places.");
+            tvAlamatUtama.setText("No recent announcements.");
             return;
         }
-        StringBuilder sb = new StringBuilder("Riwayat: ");
+        StringBuilder sb = new StringBuilder("Recently announced: ");
         for (String tempat : riwayatTempatDiumumkan) {
             sb.append(tempat).append(", ");
         }
         tvAlamatUtama.setText(sb.toString());
-        ucapkanSuara("Menampilkan tempat terakhir.");
+        ucapkanSuara("Showing recent places.");
     }
 
     private void jalankanPencarianKategori(String key, String namaKategori) {
@@ -457,14 +465,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 TempatPro t = result.get(0);
                 float[] dist = new float[1];
                 Location.distanceBetween(cLat, cLon, t.lat, t.lon, dist);
-                String pesan = t.nama + ", berjarak " + (int)dist[0] + " meter.";
+                String pesan = t.nama + ", " + (int)dist[0] + " meters away.";
                 ucapkanSuara(pesan);
                 tvAlamatUtama.setText(t.nama);
-                tvJarakMataAngin.setText((int)dist[0] + " m terdekat");
+                tvJarakMataAngin.setText((int)dist[0] + " m nearby");
                 lokasiNavigasiAktif = new LokasiTersimpan(t.nama, t.lat, t.lon);
             } else {
-                ucapkanSuara("Tidak ditemukan " + namaKat + " di sekitar Anda.");
-                tvAlamatUtama.setText("Tidak ditemukan " + namaKat);
+                ucapkanSuara("No " + namaKat + " found nearby.");
+                tvAlamatUtama.setText("Not found");
             }
         }
     }
@@ -484,16 +492,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.setBackgroundColor(Color.parseColor("#F5F5F5"));
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("Favourites (Lokasi Tersimpan)");
+        tvTitle.setText("Favourites");[span_84](start_span)[span_84](end_span)[span_85](start_span)[span_85](end_span)
         tvTitle.setTextSize(20);
         tvTitle.setTextColor(Color.parseColor("#D32F2F"));
         box.addView(tvTitle);
 
         TextView tvContent = new TextView(this);
         if (daftarLokasiTersimpan.isEmpty()) {
-            tvContent.setText("\nBelum ada lokasi favorit yang disimpan.");
+            tvContent.setText("\nNo saved locations.");
         } else {
-            StringBuilder sb = new StringBuilder("\nDaftar Lokasi:\n");
+            StringBuilder sb = new StringBuilder("\nSaved Locations:\n");
             for (int i = 0; i < daftarLokasiTersimpan.size(); i++) {
                 sb.append((i + 1)).append(". ").append(daftarLokasiTersimpan.get(i).nama).append("\n");
             }
@@ -503,12 +511,12 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.addView(tvContent);
 
         Button btnKembali = new Button(this);
-        btnKembali.setText("KEMBALI KE EKSPLORASI");
+        btnKembali.setText("BACK TO EXPLORATION");
         btnKembali.setOnClickListener(v -> tampilkanHalamanExploration());
         box.addView(btnKembali);
 
         setContentView(box);
-        ucapkanSuara("Halaman Favorit dibuka.");
+        ucapkanSuara("Favourites opened.");
     }
 
     private void tampilkanHalamanNews() {
@@ -518,23 +526,23 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.setBackgroundColor(Color.parseColor("#F5F5F5"));
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("News & Updates");
+        tvTitle.setText("News");[span_86](start_span)[span_86](end_span)[span_87](start_span)[span_87](end_span)
         tvTitle.setTextSize(20);
         tvTitle.setTextColor(Color.parseColor("#D32F2F"));
         box.addView(tvTitle);
 
         TextView tvContent = new TextView(this);
-        tvContent.setText("\nTidak ada pengumuman atau berita terbaru saat ini.");
+        tvContent.setText("\nNo new updates available.");
         tvContent.setTextSize(16);
         box.addView(tvContent);
 
         Button btnKembali = new Button(this);
-        btnKembali.setText("KEMBALI KE EKSPLORASI");
+        btnKembali.setText("BACK TO EXPLORATION");
         btnKembali.setOnClickListener(v -> tampilkanHalamanExploration());
         box.addView(btnKembali);
 
         setContentView(box);
-        ucapkanSuara("Halaman Berita dibuka.");
+        ucapkanSuara("News opened.");
     }
 
     private void tampilkanHalamanSettings() {
@@ -544,33 +552,33 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.setBackgroundColor(Color.parseColor("#F5F5F5"));
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("Settings (Pengaturan Suara)");
+        tvTitle.setText("Settings");[span_88](start_span)[span_88](end_span)[span_89](start_span)[span_89](end_span)
         tvTitle.setTextSize(20);
         tvTitle.setTextColor(Color.parseColor("#D32F2F"));
         box.addView(tvTitle);
 
         TextView tvSpeed = new TextView(this);
-        tvSpeed.setText("\nKecepatan Suara: " + kecepatanBicara + "x");
+        tvSpeed.setText("\nSpeech Speed: " + kecepatanBicara + "x");
         tvSpeed.setTextSize(16);
         box.addView(tvSpeed);
 
         Button btnCepat = new Button(this);
-        btnCepat.setText("UBAH KECEPATAN");
+        btnCepat.setText("CHANGE SPEED");
         btnCepat.setOnClickListener(v -> {
             kecepatanBicara = (kecepatanBicara < 2.0f) ? (kecepatanBicara + 0.25f) : 1.0f;
             if (tts != null) tts.setSpeechRate(kecepatanBicara);
-            tvSpeed.setText("\nKecepatan Suara: " + kecepatanBicara + "x");
-            ucapkanSuara("Kecepatan " + kecepatanBicara);
+            tvSpeed.setText("\nSpeech Speed: " + kecepatanBicara + "x");
+            ucapkanSuara("Speed " + kecepatanBicara);
         });
         box.addView(btnCepat);
 
         Button btnKembali = new Button(this);
-        btnKembali.setText("KEMBALI KE EKSPLORASI");
+        btnKembali.setText("BACK TO EXPLORATION");
         btnKembali.setOnClickListener(v -> tampilkanHalamanExploration());
         box.addView(btnKembali);
 
         setContentView(box);
-        ucapkanSuara("Halaman Pengaturan dibuka.");
+        ucapkanSuara("Settings opened.");
     }
 
     private void mulaiEksplorasiRealTime() {
@@ -616,41 +624,52 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         return bestLoc;
     }
 
-    private void kunciLokasiSangatAkurat() {
+    private void perbaruiPosisiGPSManual() {
         Location loc = dapatkanLokasiTerakhir();
-        if (loc == null) {
-            ucapkanSuara("Sinyal GPS belum siap.");
-            return;
+        if (loc != null) {
+            new CekAlamatTask().execute(loc.getLatitude(), loc.getLongitude());
+        } else {
+            ucapkanSuara("GPS signal not ready.");
         }
-        final double finalLat = loc.getLatitude();
-        final double finalLon = loc.getLongitude();
+    }
 
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Simpan Lokasi Terkunci");
-        final EditText input = new EditText(this);
-        input.setText("Lokasi Akurat " + (daftarLokasiTersimpan.size() + 1));
-        input.setPadding(40, 30, 40, 30);
-        builder.setView(input);
+    private class CekAlamatTask extends AsyncTask<Double, Void, String> {
+        @Override
+        protected String doInBackground(Double... params) {
+            try {
+                String urlStr = "https://nominatim.openstreetmap.org/reverse?lat=" + params[0] + "&lon=" + params[1] + "&format=json";
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestProperty("User-Agent", "NavigasiAplikasiAndroid");
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+                JSONObject json = new JSONObject(sb.toString());
+                if (json.has("display_name")) return json.getString("display_name");
+            } catch (Exception e) {}
+            return null;
+        }
 
-        builder.setPositiveButton("Simpan", (dialog, which) -> {
-            String namaLokasi = input.getText().toString().trim();
-            daftarLokasiTersimpan.add(new LokasiTersimpan(namaLokasi, finalLat, finalLon));
-            simpanDataLokasiKePrefs();
-            ucapkanSuara("Lokasi " + namaLokasi + " disimpan ke Favorit.");
-        });
-        builder.setNegativeButton("Batal", null);
-        builder.show();
+        @Override
+        protected void onPostExecute(String alamat) {
+            if (alamat != null) {
+                tvAlamatUtama.setText(alamat.split(",")[0]);
+                ucapkanSuara("Current location updated.");
+            }
+        }
     }
 
     private void tampilkanDialogPencarianLokasi() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Cari Lokasi Tujuan");
+        builder.setTitle("Search Location");
         final EditText input = new EditText(this);
-        input.setHint("Masukkan nama tempat...");
+        input.setHint("Enter place name...");
         input.setPadding(40, 30, 40, 30);
         builder.setView(input);
 
-        builder.setPositiveButton("Cari", (dialog, which) -> {
+        builder.setPositiveButton("Search", (dialog, which) -> {
             String query = input.getText().toString().trim();
             if (!query.isEmpty()) {
                 Location loc = dapatkanLokasiTerakhir();
@@ -659,7 +678,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 new CariLokasiTask(cLat, cLon).execute(query);
             }
         });
-        builder.setNegativeButton("Batal", null);
+        builder.setNegativeButton("Cancel", null);
         builder.show();
     }
 
@@ -693,10 +712,10 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         protected void onPostExecute(String hasil) {
             if (hasil != null) {
                 String namaPendek = hasil.split(",")[0].trim();
-                ucapkanSuara(namaPendek + " ditemukan.");
+                ucapkanSuara(namaPendek + " found.");
                 tvAlamatUtama.setText(namaPendek);
             } else {
-                ucapkanSuara("Lokasi tidak ditemukan.");
+                ucapkanSuara("Location not found.");
             }
         }
     }
@@ -748,18 +767,16 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
                 float[] dist = new float[1];
                 Location.distanceBetween(cLat, cLon, t.lat, t.lon, dist);
                 
-                // Menghitung arah mata angin kasar berdasarkan azimuth kompas
                 String arahMataAngin = "to the East";
                 if (currentAzimuth >= 45 && currentAzimuth < 135) arahMataAngin = "to the East";
                 else if (currentAzimuth >= 135 && currentAzimuth < 225) arahMataAngin = "to the South";
                 else if (currentAzimuth >= 225 && currentAzimuth < 315) arahMataAngin = "to the West";
                 else arahMataAngin = "to the North";
 
-                String teksPengumuman = t.nama;
                 String teksJarak = (int)dist[0] + " m " + arahMataAngin;
 
-                ucapkanSuara(t.nama + ", " + (int)dist[0] + " meter.");
-                tvAlamatUtama.setText(teksPengumuman);
+                ucapkanSuara(t.nama + ", " + (int)dist[0] + " meters.");
+                tvAlamatUtama.setText(t.nama);
                 tvJarakMataAngin.setText(teksJarak);
                 
                 if (!riwayatTempatDiumumkan.contains(t.nama)) {
@@ -774,7 +791,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     public void onInit(int status) {
         if (status == TextToSpeech.SUCCESS) {
             try {
-                if (tts.setLanguage(new Locale("id", "ID")) >= 0) {
+                if (tts.setLanguage(new Locale("en", "US")) >= 0) {
                     isTtsReady = true;
                     tts.setSpeechRate(kecepatanBicara);
                 }
@@ -806,7 +823,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     @Override public void onLocationChanged(Location location) {}
     @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
     @Override public void onProviderEnabled(String provider) {}
-    @Override public void onProviderDisabled(String provider) { ucapkanSuara("GPS dimatikan."); }
+    @Override public void onProviderDisabled(String provider) { ucapkanSuara("GPS disabled."); }
 
     @Override
     protected void onDestroy() {
