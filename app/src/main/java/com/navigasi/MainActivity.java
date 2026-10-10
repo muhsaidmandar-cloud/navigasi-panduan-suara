@@ -165,14 +165,14 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     // ==========================================
-    // TAMPILAN UTAMA 100% PERSIS LAZARILLO
+    // TAMPILAN UTAMA
     // ==========================================
     private void tampilkanHalamanExploration() {
         LinearLayout mainRoot = new LinearLayout(this);
         mainRoot.setOrientation(LinearLayout.VERTICAL);
         mainRoot.setBackgroundColor(Color.parseColor("#EFEFEF"));
 
-        // 1. TOP BAR (Merah Pekat khas Lazarillo)[span_37](start_span)[span_37](end_span)[span_38](start_span)[span_38](end_span)
+        // 1. TOP BAR
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setBackgroundColor(Color.parseColor("#D32F2F"));
@@ -180,7 +180,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         topBar.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView tvTitleApp = new TextView(this);
-        tvTitleApp.setText("Exploration");[span_39](start_span)[span_39](end_span)[span_40](start_span)[span_40](end_span)
+        tvTitleApp.setText("Exploration");
         tvTitleApp.setTextColor(Color.WHITE);
         tvTitleApp.setTextSize(18);
         tvTitleApp.setTypeface(null, android.graphics.Typeface.BOLD);
@@ -191,7 +191,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         tvTitleApp.setLayoutParams(titleParams);
         topBar.addView(tvTitleApp);
 
-        // Tombol Bilah Atas dengan penamaan pembaca layar identik Lazarillo[span_41](start_span)[span_41](end_span)[span_42](start_span)[span_42](end_span)
         Button btnPlayPause = createTopBarButton("▶", "Pause");
         btnPlayPause.setOnClickListener(v -> {
             isEksplorasiFiturAktif = !isEksplorasiFiturAktif;
@@ -209,15 +208,15 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         });
         topBar.addView(btnPlayPause);
 
-        Button btnTarget = createTopBarButton("◎", "Current Location");[span_43](start_span)[span_43](end_span)[span_44](start_span)[span_44](end_span)
+        Button btnTarget = createTopBarButton("◎", "Current Location");
         btnTarget.setOnClickListener(v -> perbaruiPosisiGPSManual());
         topBar.addView(btnTarget);
 
-        Button btnSearch = createTopBarButton("🔍", "Search");[span_45](start_span)[span_45](end_span)[span_46](start_span)[span_46](end_span)
+        Button btnSearch = createTopBarButton("🔍", "Search");
         btnSearch.setOnClickListener(v -> tampilkanDialogPencarianLokasi());
         topBar.addView(btnSearch);
 
-        Button btnMenu = createTopBarButton("≡", "Menu");[span_47](start_span)[span_47](end_span)[span_48](start_span)[span_48](end_span)
+        Button btnMenu = createTopBarButton("≡", "Menu");
         btnMenu.setOnClickListener(v -> tampilkanHalamanFavourites());
         topBar.addView(btnMenu);
 
@@ -231,7 +230,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setPadding(20, 20, 20, 20);
 
-        // 2. KARTU BANNER ALAMAT DI ATAS[span_49](start_span)[span_49](end_span)
+        // 2. KARTU BANNER ALAMAT DI ATAS
         LinearLayout bannerCard = new LinearLayout(this);
         bannerCard.setOrientation(LinearLayout.HORIZONTAL);
         bannerCard.setGravity(Gravity.CENTER_VERTICAL);
@@ -271,37 +270,37 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         tvJarakMataAngin.setPadding(8, 12, 0, 24);
         contentLayout.addView(tvJarakMataAngin);
 
-        // 3. GRID 11 MENU KATEGORI LINGKARAN MERAH (Persis Lazarillo)[span_50](start_span)[span_50](end_span)[span_51](start_span)[span_51](end_span)
+        // 3. GRID 11 MENU KATEGORI
         GridLayout gridMenu = new GridLayout(this);
         gridMenu.setColumnCount(3);
         gridMenu.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
 
-        addMenuCard(gridMenu, "Recently announced", "⏱", "recently");[span_52](start_span)[span_52](end_span)[span_53](start_span)[span_53](end_span)
-        addMenuCard(gridMenu, "Transport", "🚌", "transport");[span_54](start_span)[span_54](end_span)[span_55](start_span)[span_55](end_span)
-        addMenuCard(gridMenu, "Banks and ATMs", "🏧", "banks");[span_56](start_span)[span_56](end_span)[span_57](start_span)[span_57](end_span)
-        addMenuCard(gridMenu, "Health", "➕", "health");[span_58](start_span)[span_58](end_span)[span_59](start_span)[span_59](end_span)
-        addMenuCard(gridMenu, "Food", "🍽", "food");[span_60](start_span)[span_60](end_span)[span_61](start_span)[span_61](end_span)
-        addMenuCard(gridMenu, "Stores", "🛍", "stores");[span_62](start_span)[span_62](end_span)[span_63](start_span)[span_63](end_span)
-        addMenuCard(gridMenu, "Arts and entertainment", "🎭", "arts");[span_64](start_span)[span_64](end_span)[span_65](start_span)[span_65](end_span)
-        addMenuCard(gridMenu, "Public buildings", "🏢", "public");[span_66](start_span)[span_66](end_span)[span_67](start_span)[span_67](end_span)
-        addMenuCard(gridMenu, "Education facilities", "🛠", "education");[span_68](start_span)[span_68](end_span)[span_69](start_span)[span_69](end_span)
-        addMenuCard(gridMenu, "Pubs and clubs", "🍸", "pubs");[span_70](start_span)[span_70](end_span)[span_71](start_span)[span_71](end_span)
-        addMenuCard(gridMenu, "Lodging", "🏨", "lodging");[span_72](start_span)[span_72](end_span)[span_73](start_span)[span_73](end_span)
+        addMenuCard(gridMenu, "Recently announced", "⏱", "recently");
+        addMenuCard(gridMenu, "Transport", "🚌", "transport");
+        addMenuCard(gridMenu, "Banks and ATMs", "🏧", "banks");
+        addMenuCard(gridMenu, "Health", "➕", "health");
+        addMenuCard(gridMenu, "Food", "🍽", "food");
+        addMenuCard(gridMenu, "Stores", "🛍", "stores");
+        addMenuCard(gridMenu, "Arts and entertainment", "🎭", "arts");
+        addMenuCard(gridMenu, "Public buildings", "🏢", "public");
+        addMenuCard(gridMenu, "Education facilities", "🛠", "education");
+        addMenuCard(gridMenu, "Pubs and clubs", "🍸", "pubs");
+        addMenuCard(gridMenu, "Lodging", "🏨", "lodging");
 
         contentLayout.addView(gridMenu);
         scrollView.addView(contentLayout);
         mainRoot.addView(scrollView);
 
-        // 4. BOTTOM NAVIGATION BAR (Persis Lazarillo)[span_74](start_span)[span_74](end_span)[span_75](start_span)[span_75](end_span)
+        // 4. BOTTOM NAVIGATION BAR
         LinearLayout bottomBar = new LinearLayout(this);
         bottomBar.setOrientation(LinearLayout.HORIZONTAL);
         bottomBar.setBackgroundColor(Color.parseColor("#FAFAFA"));
         bottomBar.setPadding(8, 12, 8, 12);
 
-        bottomBar.addView(createBottomNavItem("🧭\nExploration", "Exploration", true, v -> tampilkanHalamanExploration()));[span_76](start_span)[span_76](end_span)[span_77](start_span)[span_77](end_span)
-        bottomBar.addView(createBottomNavItem("⭐\nFavourites", "Favourites", false, v -> tampilkanHalamanFavourites()));[span_78](start_span)[span_78](end_span)[span_79](start_span)[span_79](end_span)
-        bottomBar.addView(createBottomNavItem("🔔\nNews", "News", false, v -> tampilkanHalamanNews()));[span_80](start_span)[span_80](end_span)[span_81](start_span)[span_81](end_span)
-        bottomBar.addView(createBottomNavItem("⚙\nSettings", "Settings", false, v -> tampilkanHalamanSettings()));[span_82](start_span)[span_82](end_span)[span_83](start_span)[span_83](end_span)
+        bottomBar.addView(createBottomNavItem("🧭\nExploration", "Exploration", true, v -> tampilkanHalamanExploration()));
+        bottomBar.addView(createBottomNavItem("⭐\nFavourites", "Favourites", false, v -> tampilkanHalamanFavourites()));
+        bottomBar.addView(createBottomNavItem("🔔\nNews", "News", false, v -> tampilkanHalamanNews()));
+        bottomBar.addView(createBottomNavItem("⚙\nSettings", "Settings", false, v -> tampilkanHalamanSettings()));
 
         mainRoot.addView(bottomBar);
         setContentView(mainRoot);
@@ -492,7 +491,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.setBackgroundColor(Color.parseColor("#F5F5F5"));
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("Favourites");[span_84](start_span)[span_84](end_span)[span_85](start_span)[span_85](end_span)
+        tvTitle.setText("Favourites");
         tvTitle.setTextSize(20);
         tvTitle.setTextColor(Color.parseColor("#D32F2F"));
         box.addView(tvTitle);
@@ -526,7 +525,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.setBackgroundColor(Color.parseColor("#F5F5F5"));
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("News");[span_86](start_span)[span_86](end_span)[span_87](start_span)[span_87](end_span)
+        tvTitle.setText("News");
         tvTitle.setTextSize(20);
         tvTitle.setTextColor(Color.parseColor("#D32F2F"));
         box.addView(tvTitle);
@@ -552,7 +551,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         box.setBackgroundColor(Color.parseColor("#F5F5F5"));
 
         TextView tvTitle = new TextView(this);
-        tvTitle.setText("Settings");[span_88](start_span)[span_88](end_span)[span_89](start_span)[span_89](end_span)
+        tvTitle.setText("Settings");
         tvTitle.setTextSize(20);
         tvTitle.setTextColor(Color.parseColor("#D32F2F"));
         box.addView(tvTitle);
