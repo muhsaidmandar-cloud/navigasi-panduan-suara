@@ -4,24 +4,29 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
 import android.media.AudioManager;
-import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.Looper;
 import android.speech.tts.TextToSpeech;
+import android.graphics.Color;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.Button;
 import android.widget.EditText;
+import android.widget.GridLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 import androidx.core.app.ActivityCompat;
@@ -39,965 +44,748 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
-public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
-
-    private static final String PREF_NAME = "jieshuo_maps_config";
-    private static final String KEY_API = "locationiq_access_token";
-    private static final String KEY_BOOKMARKS = "saved_locations_json";
-    private static final String KEY_TTS_ENGINE = "selected_tts_engine";
+public class MainActivity extends Activity implements LocationListener, SensorEventListener, TextToSpeech.OnInitListener {
     
-    private TextToSpeech ttsEngine;
-    private boolean isTtsReady = false;
+    private TextView infoBanner;
     private LocationManager locationManager;
-    private LocationListener activeLocationListener;
+    private SensorManager sensorManager;
+    private Sensor rotationSensor;
     
-    // Status Navigasi Aktif
-    private BookmarkItem activeTargetItem = null;
-    private StartLoc activeStartLoc = null;
-    private boolean isNavigating = false;
+    private float currentAzimuth = 0.0f; 
+    private TextToSpeech tts;
+    private boolean isTtsReady = false;
+    private float kecepatanBicara = 1.0f;     
+    private int selectedAudioStream = AudioManager.STREAM_MUSIC;
 
-    public static class BookmarkItem {
-        String name;
-        double lat;
-        double lng;
-        String note;
+    private List<LokasiTersimpan> daftarLokasiTersimpan = new ArrayList<>();
+    private LokasiTersimpan lokasiNavigasiAktif = null;
+    
+    private boolean isEksplorasiFiturAktif = false;
+    private List<String> riwayatTempatDiumumkan = new ArrayList<>();
 
-        public BookmarkItem(String name, double lat, double lng, String note) {
-            this.name = name;
-            this.lat = lat;
-            this.lng = lng;
-            this.note = note != null ? note : "";
+    private Handler explorationHandler = new Handler();
+    private Runnable explorationRunnable;
+
+    private static final int PERMISSION_REQUEST_CODE = 100;
+
+    public static class LokasiTersimpan {
+        String nama;
+        double lat, lon;
+        public LokasiTersimpan(String nama, double lat, double lon) {
+            this.nama = nama; this.lat = lat; this.lon = lon;
         }
     }
 
-    public static class StartLoc {
-        double lat;
-        double lng;
+    @Override 
+    public void onCreate(Bundle state) {
+        super.onCreate(state);
+        setVolumeControlStream(selectedAudioStream);
+        cekDanMintaIzinLokasi();
+        muatDataLokasiDariPrefs();
+        inisialisasiSensorKompasPro();
+        inisialisasiTtsMandiri();
+        tampilkanHalamanExploration();
+    }
 
-        public StartLoc(double lat, double lng) {
-            this.lat = lat;
-            this.lng = lng;
+    private void cekDanMintaIzinLokasi() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(this, new String[]{
+                    android.Manifest.permission.ACCESS_FINE_LOCATION,
+                    android.Manifest.permission.ACCESS_COARSE_LOCATION
+                }, PERMISSION_REQUEST_CODE);
+            }
+        }
+    }
+
+    private void inisialisasiSensorKompasPro() {
+        sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+        if (sensorManager != null) {
+            rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+            if (rotationSensor == null) {
+                rotationSensor = sensorManager.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR);
+            }
+        }
+    }
+
+    private void mulaiSensorKompas() {
+        if (sensorManager != null && rotationSensor != null) {
+            sensorManager.registerListener(this, rotationSensor, SensorManager.SENSOR_DELAY_UI);
+        }
+    }
+
+    private void hentikanSensorKompas() {
+        if (sensorManager != null) {
+            sensorManager.unregisterListener(this);
         }
     }
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        setVolumeControlStream(AudioManager.STREAM_MUSIC);
-        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
-        initTtsEngine(null);
-        menuUtama();
-    }
-
-    // ========================================================
-    // KONTROL TTS
-    // ========================================================
-    private String getSavedTtsEngine() {
-        SharedPreferences sp = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
-        return sp.getString(KEY_TTS_ENGINE, "");
-    }
-
-    private void saveTtsEngine(String pkgName) {
-        SharedPreferences sp = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
-        sp.edit().putString(KEY_TTS_ENGINE, pkgName).apply();
-    }
-
-    private void initTtsEngine(final Runnable onReadyCallback) {
-        String selectedPkg = getSavedTtsEngine();
-        if (ttsEngine != null) {
-            try {
-                ttsEngine.stop();
-                ttsEngine.shutdown();
-            } catch (Exception e) {}
-            ttsEngine = null;
+    public void onSensorChanged(SensorEvent event) {
+        if (event.sensor.getType() == Sensor.TYPE_ROTATION_VECTOR || event.sensor.getType() == Sensor.TYPE_GAME_ROTATION_VECTOR) {
+            float[] rotationMatrix = new float[9];
+            SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values);
+            float[] orientation = new float[3];
+            SensorManager.getOrientation(rotationMatrix, orientation);
+            currentAzimuth = (float) (Math.toDegrees(orientation[0]) + 360) % 360; 
         }
-        isTtsReady = false;
+    }
 
-        try {
-            if (selectedPkg != null && !selectedPkg.isEmpty()) {
-                ttsEngine = new TextToSpeech(this, this, selectedPkg);
+    @Override public void onAccuracyChanged(Sensor sensor, int accuracy) {}
+
+    private void muatDataLokasiDariPrefs() {
+        daftarLokasiTersimpan.clear();
+        SharedPreferences prefs = getSharedPreferences("NavigasiPrefs", MODE_PRIVATE);
+        int jumlah = prefs.getInt("jumlah_lokasi", 0);
+        for (int i = 0; i < jumlah; i++) {
+            String nama = prefs.getString("nama_" + i, "Lokasi " + (i + 1));
+            double lat = Double.longBitsToDouble(prefs.getLong("lat_" + i, 0));
+            double lon = Double.longBitsToDouble(prefs.getLong("lon_" + i, 0));
+            daftarLokasiTersimpan.add(new LokasiTersimpan(nama, lat, lon));
+        }
+    }
+
+    private void simpanDataLokasiKePrefs() {
+        SharedPreferences prefs = getSharedPreferences("NavigasiPrefs", MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        editor.putInt("jumlah_lokasi", daftarLokasiTersimpan.size());
+        for (int i = 0; i < daftarLokasiTersimpan.size(); i++) {
+            LokasiTersimpan loc = daftarLokasiTersimpan.get(i);
+            editor.putString("nama_" + i, loc.nama);
+            editor.putLong("lat_" + i, Double.doubleToRawLongBits(loc.lat));
+            editor.putLong("lon_" + i, Double.doubleToRawLongBits(loc.lon));
+        }
+        editor.apply();
+    }
+
+    private void inisialisasiTtsMandiri() {
+        if (tts != null) { try { tts.stop(); tts.shutdown(); } catch (Exception e) {} }
+        tts = new TextToSpeech(this, this);
+    }
+
+    // ==========================================
+    // TAMPILAN UTAMA PERSIS LAZARILLO[span_5](start_span)[span_5](end_span)
+    // ==========================================
+    private void tampilkanHalamanExploration() {
+        LinearLayout mainRoot = new LinearLayout(this);
+        mainRoot.setOrientation(LinearLayout.VERTICAL);
+        mainRoot.setBackgroundColor(Color.parseColor("#F5F5F5"));
+
+        // 1. TOP BAR (Merah khas Lazarillo)
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setBackgroundColor(Color.parseColor("#D32F2F"));
+        topBar.setPadding(24, 20, 24, 20);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView tvTitleApp = new TextView(this);
+        tvTitleApp.setText("Exploration");
+        tvTitleApp.setTextColor(Color.WHITE);
+        tvTitleApp.setTextSize(20);
+        tvTitleApp.setTypeface(null, android.graphics.Typeface.BOLD);
+        tvTitleApp.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        topBar.addView(tvTitleApp);
+
+        // Tombol Atas: Jeda, Target GPS, Cari, Menu
+        Button btnPause = createTopBarButton("⏸");
+        btnPause.setOnClickListener(v -> {
+            isEksplorasiFiturAktif = false;
+            hentikanEksplorasiRealTime();
+            ucapkanSuara("Eksplorasi dijeda.");
+        });
+        topBar.addView(btnPause);
+
+        Button btnTarget = createTopBarButton("◎");
+        btnTarget.setOnClickListener(v -> kunciLokasiSangatAkurat());
+        topBar.addView(btnTarget);
+
+        Button btnSearch = createTopBarButton("🔍");
+        btnSearch.setOnClickListener(v -> tampilkanDialogPencarianLokasi());
+        topBar.addView(btnSearch);
+
+        Button btnMenu = createTopBarButton("≡");
+        btnMenu.setOnClickListener(v -> tampilkanHalamanFavourites());
+        topBar.addView(btnMenu);
+
+        mainRoot.addView(topBar);
+
+        // Scrollable Content
+        ScrollView scrollView = new ScrollView(this);
+        scrollView.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f));
+        
+        LinearLayout contentLayout = new LinearLayout(this);
+        contentLayout.setOrientation(LinearLayout.VERTICAL);
+        contentLayout.setPadding(20, 20, 20, 20);
+
+        // 2. BANNER STATUS TEMPAT TERDEKAT DI ATAS[span_6](start_span)[span_6](end_span)
+        LinearLayout bannerCard = new LinearLayout(this);
+        bannerCard.setOrientation(LinearLayout.VERTICAL);
+        bannerCard.setBackgroundColor(Color.parseColor("#D32F2F"));
+        bannerCard.setPadding(28, 24, 28, 24);
+        
+        TextView tvBannerHeader = new TextView(this);
+        tvBannerHeader.setText("Memindai Lingkungan Sekitar...");
+        tvBannerHeader.setTextColor(Color.WHITE);
+        tvBannerHeader.setTextSize(17);
+        tvBannerHeader.setTypeface(null, android.graphics.Typeface.BOLD);
+        bannerCard.addView(tvBannerHeader);
+
+        infoBanner = new TextView(this);
+        infoBanner.setText("Sistem aktif mendeteksi tempat terdekat.");
+        infoBanner.setTextColor(Color.WHITE);
+        infoBanner.setTextSize(14);
+        infoBanner.setPadding(0, 6, 0, 0);
+        bannerCard.addView(infoBanner);
+
+        contentLayout.addView(bannerCard);
+
+        View spacer = new View(this);
+        spacer.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 24));
+        contentLayout.addView(spacer);
+
+        // 3. GRID MENU KATEGORI (11 Menu Persis Gambar Lazarillo)[span_7](start_span)[span_7](end_span)
+        GridLayout gridMenu = new GridLayout(this);
+        gridMenu.setColumnCount(3);
+        gridMenu.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
+
+        addMenuCard(gridMenu, "Recently announced", "⏱", "recently");
+        addMenuCard(gridMenu, "Transport", "🚌", "transport");
+        addMenuCard(gridMenu, "Banks and ATMs", "🏧", "banks");
+        addMenuCard(gridMenu, "Health", "➕", "health");
+        addMenuCard(gridMenu, "Food", "🍽", "food");
+        addMenuCard(gridMenu, "Stores", "🛍", "stores");
+        addMenuCard(gridMenu, "Arts and entertainment", "🎭", "arts");
+        addMenuCard(gridMenu, "Public buildings", "🏢", "public");
+        addMenuCard(gridMenu, "Education facilities", "🛠", "education");
+        addMenuCard(gridMenu, "Pubs and clubs", "🍸", "pubs");
+        addMenuCard(gridMenu, "Lodging", "🏨", "lodging");
+
+        contentLayout.addView(gridMenu);
+        scrollView.addView(contentLayout);
+        mainRoot.addView(scrollView);
+
+        // 4. BOTTOM NAVIGATION BAR (Menu Bawah)[span_8](start_span)[span_8](end_span)
+        LinearLayout bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomBar.setBackgroundColor(Color.parseColor("#FAFAFA"));
+        bottomBar.setPadding(8, 12, 8, 12);
+
+        bottomBar.addView(createBottomNavItem("🧭\nExploration", true, v -> tampilkanHalamanExploration()));
+        bottomBar.addView(createBottomNavItem("⭐\nFavourites", false, v -> tampilkanHalamanFavourites()));
+        bottomBar.addView(createBottomNavItem("🔔\nNews", false, v -> tampilkanHalamanNews()));
+        bottomBar.addView(createBottomNavItem("⚙\nSettings", false, v -> tampilkanHalamanSettings()));
+
+        mainRoot.addView(bottomBar);
+        setContentView(mainRoot);
+
+        // Mulai layanan latar belakang eksplorasi
+        isEksplorasiFiturAktif = true;
+        mulaiSensorKompas();
+        mulaiMendengarkanGPS();
+        mulaiEksplorasiRealTime();
+    }
+
+    private Button createTopBarButton(String symbol) {
+        Button btn = new Button(this);
+        btn.setText(symbol);
+        btn.setTextColor(Color.WHITE);
+        btn.setTextSize(18);
+        btn.setBackgroundColor(Color.TRANSPARENT);
+        btn.setPadding(12, 0, 12, 0);
+        return btn;
+    }
+
+    private void addMenuCard(GridLayout grid, String title, String emoji, String categoryKey) {
+        LinearLayout itemBox = new LinearLayout(this);
+        itemBox.setOrientation(LinearLayout.VERTICAL);
+        itemBox.setGravity(Gravity.CENTER);
+        int width = getResources().getDisplayMetrics().widthPixels / 3 - 24;
+        itemBox.setLayoutParams(new GridLayout.LayoutParams(
+            GridLayout.spec(GridLayout.UNDEFINED, 1f),
+            GridLayout.spec(GridLayout.UNDEFINED, 1f)
+        ));
+        itemBox.getLayoutParams().width = width;
+        itemBox.setPadding(4, 12, 4, 12);
+
+        TextView circleIcon = new TextView(this);
+        circleIcon.setText(emoji);
+        circleIcon.setTextSize(24);
+        circleIcon.setGravity(Gravity.CENTER);
+        circleIcon.setTextColor(Color.WHITE);
+        circleIcon.setBackgroundColor(Color.parseColor("#D32F2F"));
+        int size = 125;
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(size, size);
+        params.gravity = Gravity.CENTER_HORIZONTAL;
+        circleIcon.setLayoutParams(params);
+        itemBox.addView(circleIcon);
+
+        TextView tvLabel = new TextView(this);
+        tvLabel.setText(title);
+        tvLabel.setTextSize(12);
+        tvLabel.setTextColor(Color.parseColor("#333333"));
+        tvLabel.setGravity(Gravity.CENTER);
+        tvLabel.setPadding(0, 10, 0, 0);
+        itemBox.addView(tvLabel);
+
+        itemBox.setOnClickListener(v -> {
+            ucapkanSuara("Mencari " + title + "...");
+            if (categoryKey.equals("recently")) {
+                tampilkanRiwayatPengumuman();
             } else {
-                ttsEngine = new TextToSpeech(this, this);
+                jalankanPencarianKategori(categoryKey, title);
             }
-        } catch (Exception e) {
-            ttsEngine = new TextToSpeech(this, this);
+        });
+
+        grid.addView(itemBox);
+    }
+
+    private TextView createBottomNavItem(String label, boolean isActive, View.OnClickListener listener) {
+        TextView tv = new TextView(this);
+        tv.setText(label);
+        tv.setTextSize(11);
+        tv.setGravity(Gravity.CENTER);
+        tv.setTextColor(isActive ? Color.parseColor("#D32F2F") : Color.parseColor("#666666"));
+        tv.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
+        tv.setOnClickListener(listener);
+        return tv;
+    }
+
+    // ==========================================
+    // FUNGSI UTAMA MENU & KATEGORI
+    > ==========================================
+    private void tampilkanRiwayatPengumuman() {
+        if (riwayatTempatDiumumkan.isEmpty()) {
+            ucapkanSuara("Belum ada tempat yang baru diumumkan.");
+            infoBanner.setText("Riwayat kosong.");
+            return;
+        }
+        StringBuilder sb = new StringBuilder("Tempat yang baru diumumkan:\n");
+        for (String tempat : riwayatTempatDiumumkan) {
+            sb.append("- ").append(tempat).append("\n");
+        }
+        infoBanner.setText(sb.toString());
+        ucapkanSuara("Menampilkan " + riwayatTempatDiumumkan.size() + " tempat terakhir.");
+    }
+
+    private void jalankanPencarianKategori(String key, String namaKategori) {
+        Location loc = dapatkanLokasiTerakhir();
+        double cLat = (loc != null) ? loc.getLatitude() : 0.0;
+        double cLon = (loc != null) ? loc.getLongitude() : 0.0;
+        new CariKategoriTask(cLat, cLon, namaKategori).execute(key);
+    }
+
+    private class CariKategoriTask extends AsyncTask<String, Void, List<TempatPro>> {
+        double cLat, cLon;
+        String namaKat;
+
+        public CariKategoriTask(double lat, double lon, String kat) {
+            this.cLat = lat; this.cLon = lon; this.namaKat = kat;
+        }
+
+        @Override
+        protected List<TempatPro> doInBackground(String... params) {
+            String tagQuery = "";
+            String k = params[0];
+            if (k.equals("transport")) tagQuery = "public_transport|amenity=bus_station";
+            else if (k.equals("banks")) tagQuery = "amenity=bank|amenity=atm";
+            else if (k.equals("health")) tagQuery = "amenity=hospital|amenity=pharmacy";
+            else if (k.equals("food")) tagQuery = "amenity=restaurant|amenity=cafe|amenity=fast_food";
+            else if (k.equals("stores")) tagQuery = "shop=supermarket|shop=convenience|shop=mall";
+            else if (k.equals("arts")) tagQuery = "amenity=arts_centre|tourism=attraction";
+            else if (k.equals("public")) tagQuery = "amenity=townhall|office=government";
+            else if (k.equals("education")) tagQuery = "amenity=school|amenity=university";
+            else if (k.equals("pubs")) tagQuery = "amenity=pub|amenity=bar";
+            else if (k.equals("lodging")) tagQuery = "tourism=hotel|tourism=guest_house";
+            else tagQuery = "name";
+
+            List<TempatPro> hasil = new ArrayList<>();
+            try {
+                String query = "[out:json][timeout:5];(node(around:1000," + cLat + "," + cLon + ")[" + tagQuery.split("=")[0] + "];);out body 5;";
+                String urlStr = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8");
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestProperty("User-Agent", "NavigasiAplikasiAndroid");
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONObject json = new JSONObject(sb.toString());
+                JSONArray elements = json.getJSONArray("elements");
+                for (int i = 0; i < elements.length(); i++) {
+                    JSONObject el = elements.getJSONObject(i);
+                    if (el.has("tags")) {
+                        JSONObject tags = el.getJSONObject("tags");
+                        String nama = tags.optString("name", namaKat);
+                        double lat = el.optDouble("lat", cLat);
+                        double lon = el.optDouble("lon", cLon);
+                        hasil.add(new TempatPro(nama, lat, lon));
+                    }
+                }
+            } catch (Exception e) {}
+            return hasil;
+        }
+
+        @Override
+        protected void onPostExecute(List<TempatPro> result) {
+            if (result != null && !result.isEmpty()) {
+                TempatPro t = result.get(0);
+                float[] dist = new float[1];
+                Location.distanceBetween(cLat, cLon, t.lat, t.lon, dist);
+                String pesan = t.nama + ", berjarak sekitar " + (int)dist[0] + " meter.";
+                ucapkanSuara(pesan);
+                infoBanner.setText(namaKat + " Terdekat:\n" + pesan);
+                lokasiNavigasiAktif = new LokasiTersimpan(t.nama, t.lat, t.lon);
+            } else {
+                ucapkanSuara("Tidak ditemukan " + namaKat + " di sekitar Anda.");
+                infoBanner.setText("Pencarian " + namaKat + " nihil.");
+            }
+        }
+    }
+
+    private static class TempatPro {
+        String nama;
+        double lat, lon;
+        public TempatPro(String nama, double lat, double lon) {
+            this.nama = nama; this.lat = lat; this.lon = lon;
+        }
+    }
+
+    // ==========================================
+    // MENU BAWAH: FAVOURITES, NEWS, SETTINGS
+    // ==========================================
+    private void tampilkanHalamanFavourites() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(32, 32, 32, 32);
+        box.setBackgroundColor(Color.parseColor("#F5F5F5"));
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("Favourites (Lokasi Tersimpan)");
+        tvTitle.setTextSize(20);
+        tvTitle.setTextColor(Color.parseColor("#D32F2F"));
+        box.addView(tvTitle);
+
+        TextView tvContent = new TextView(this);
+        if (daftarLokasiTersimpan.isEmpty()) {
+            tvContent.setText("\nBelum ada lokasi favorit yang disimpan.");
+        } else {
+            StringBuilder sb = new StringBuilder("\nDaftar Lokasi:\n");
+            for (int i = 0; i < daftarLokasiTersimpan.size(); i++) {
+                sb.append((i + 1)).append(". ").append(daftarLokasiTersimpan.get(i).nama).append("\n");
+            }
+            tvContent.setText(sb.toString());
+        }
+        tvContent.setTextSize(16);
+        box.addView(tvContent);
+
+        Button btnKembali = new Button(this);
+        btnKembali.setText("KEMBALI KE EKSPLORASI");
+        btnKembali.setOnClickListener(v -> tampilkanHalamanExploration());
+        box.addView(btnKembali);
+
+        setContentView(box);
+        ucapkanSuara("Halaman Favorit dibuka.");
+    }
+
+    private void tampilkanHalamanNews() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(32, 32, 32, 32);
+        box.setBackgroundColor(Color.parseColor("#F5F5F5"));
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("News & Updates");
+        tvTitle.setTextSize(20);
+        tvTitle.setTextColor(Color.parseColor("#D32F2F"));
+        box.addView(tvTitle);
+
+        TextView tvContent = new TextView(this);
+        tvContent.setText("\nTidak ada pengumuman atau berita terbaru saat ini. Sistem navigasi berjalan normal.");
+        tvContent.setTextSize(16);
+        box.addView(tvContent);
+
+        Button btnKembali = new Button(this);
+        btnKembali.setText("KEMBALI KE EKSPLORASI");
+        btnKembali.setOnClickListener(v -> tampilkanHalamanExploration());
+        box.addView(btnKembali);
+
+        setContentView(box);
+        ucapkanSuara("Halaman Berita dibuka.");
+    }
+
+    private void tampilkanHalamanSettings() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(32, 32, 32, 32);
+        box.setBackgroundColor(Color.parseColor("#F5F5F5"));
+
+        TextView tvTitle = new TextView(this);
+        tvTitle.setText("Settings (Pengaturan Suara)");
+        tvTitle.setTextSize(20);
+        tvTitle.setTextColor(Color.parseColor("#D32F2F"));
+        box.addView(tvTitle);
+
+        TextView tvSpeed = new TextView(this);
+        tvSpeed.setText("\nKecepatan Suara: " + kecepatanBicara + "x");
+        tvSpeed.setTextSize(16);
+        box.addView(tvSpeed);
+
+        Button btnCepat = new Button(this);
+        btnCepat.setText("UBAH KECEPATAN");
+        btnCepat.setOnClickListener(v -> {
+            kecepatanBicara = (kecepatanBicara < 2.0f) ? (kecepatanBicara + 0.25f) : 1.0f;
+            if (tts != null) tts.setSpeechRate(kecepatanBicara);
+            tvSpeed.setText("\nKecepatan Suara: " + kecepatanBicara + "x");
+            ucapkanSuara("Kecepatan " + kecepatanBicara);
+        });
+        box.addView(btnCepat);
+
+        Button btnKembali = new Button(this);
+        btnKembali.setText("KEMBALI KE EKSPLORASI");
+        btnKembali.setOnClickListener(v -> tampilkanHalamanExploration());
+        box.addView(btnKembali);
+
+        setContentView(box);
+        ucapkanSuara("Halaman Pengaturan dibuka.");
+    }
+
+    // ==========================================
+    // BACKGROUND SERVICE & GPS
+    // ==========================================
+    private void mulaiEksplorasiRealTime() {
+        if (explorationRunnable == null) {
+            explorationRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    if (isEksplorasiFiturAktif) {
+                        Location loc = dapatkanLokasiTerakhir();
+                        if (loc != null) {
+                            new EksplorasiKompasProTask().execute(loc.getLatitude(), loc.getLongitude(), 40.0, (double) currentAzimuth);
+                        }
+                    }
+                    explorationHandler.postDelayed(this, 7000);
+                }
+            };
+        }
+        explorationHandler.post(explorationRunnable);
+    }
+
+    private void hentikanEksplorasiRealTime() {
+        if (explorationHandler != null && explorationRunnable != null) {
+            explorationHandler.removeCallbacks(explorationRunnable);
+        }
+    }
+
+    private Location dapatkanLokasiTerakhir() {
+        Location bestLoc = null;
+        try {
+            if (locationManager == null) {
+                locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            }
+            if (locationManager != null && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                List<String> providers = locationManager.getProviders(true);
+                for (String provider : providers) {
+                    Location l = locationManager.getLastKnownLocation(provider);
+                    if (l != null && (bestLoc == null || l.getTime() > bestLoc.getTime())) {
+                        bestLoc = l;
+                    }
+                }
+            }
+        } catch (Exception e) {}
+        return bestLoc;
+    }
+
+    private void kunciLokasiSangatAkurat() {
+        Location loc = dapatkanLokasiTerakhir();
+        if (loc == null) {
+            ucapkanSuara("Sinyal GPS belum siap.");
+            return;
+        }
+        final double finalLat = loc.getLatitude();
+        final double finalLon = loc.getLongitude();
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Simpan Lokasi Terkunci");
+        final EditText input = new EditText(this);
+        input.setText("Lokasi Akurat " + (daftarLokasiTersimpan.size() + 1));
+        input.setPadding(40, 30, 40, 30);
+        builder.setView(input);
+
+        builder.setPositiveButton("Simpan", (dialog, which) -> {
+            String namaLokasi = input.getText().toString().trim();
+            daftarLokasiTersimpan.add(new LokasiTersimpan(namaLokasi, finalLat, finalLon));
+            simpanDataLokasiKePrefs();
+            ucapkanSuara("Lokasi " + namaLokasi + " disimpan ke Favorit.");
+        });
+        builder.setNegativeButton("Batal", null);
+        builder.show();
+    }
+
+    private void tampilkanDialogPencarianLokasi() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Cari Lokasi Tujuan");
+        final EditText input = new EditText(this);
+        input.setHint("Masukkan nama tempat...");
+        input.setPadding(40, 30, 40, 30);
+        builder.setView(input);
+
+        builder.setPositiveButton("Cari", (dialog, which) -> {
+            String query = input.getText().toString().trim();
+            if (!query.isEmpty()) {
+                Location loc = dapatkanLokasiTerakhir();
+                double cLat = (loc != null) ? loc.getLatitude() : 0.0;
+                double cLon = (loc != null) ? loc.getLongitude() : 0.0;
+                new CariLokasiTask(cLat, cLon).execute(query);
+            }
+        });
+        builder.setNegativeButton("Batal", null);
+        builder.show();
+    }
+
+    private class CariLokasiTask extends AsyncTask<String, Void, String> {
+        double uLat, uLon;
+        public CariLokasiTask(double lat, double lon) { this.uLat = lat; this.uLon = lon; }
+
+        @Override
+        protected String doInBackground(String... params) {
+            try {
+                String urlStr = "https://nominatim.openstreetmap.org/search?q=" + URLEncoder.encode(params[0], "UTF-8") + "&format=json&limit=1";
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestProperty("User-Agent", "NavigasiAplikasiAndroid");
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+                
+                JSONArray arr = new JSONArray(sb.toString());
+                if (arr.length() > 0) {
+                    JSONObject obj = arr.getJSONObject(0);
+                    return obj.getString("display_name");
+                }
+            } catch (Exception e) {}
+            return null;
+        }
+
+        @Override
+        protected void onPostExecute(String hasil) {
+            if (hasil != null) {
+                String namaPendek = hasil.split(",")[0].trim();
+                ucapkanSuara(namaPendek + " ditemukan.");
+                infoBanner.setText("Hasil Pencarian:\n" + namaPendek);
+            } else {
+                ucapkanSuara("Lokasi tidak ditemukan.");
+            }
+        }
+    }
+
+    private class EksplorasiKompasProTask extends AsyncTask<Double, Void, List<TempatPro>> {
+        double cLat, cLon;
+        int radius = 40;
+
+        @Override
+        protected List<TempatPro> doInBackground(Double... coords) {
+            cLat = coords[0]; cLon = coords[1];
+            if (coords.length > 2) radius = coords[2].intValue();
+
+            List<TempatPro> hasil = new ArrayList<>();
+            try {
+                String query = "[out:json][timeout:3];(node(around:" + radius + "," + cLat + "," + cLon + ")[name];);out body 3;";
+                String urlStr = "https://overpass-api.de/api/interpreter?data=" + URLEncoder.encode(query, "UTF-8");
+                URL url = new URL(urlStr);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestProperty("User-Agent", "NavigasiAplikasiAndroid");
+                BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) sb.append(line);
+                reader.close();
+
+                JSONObject json = new JSONObject(sb.toString());
+                JSONArray elements = json.getJSONArray("elements");
+                for (int i = 0; i < elements.length(); i++) {
+                    JSONObject el = elements.getJSONObject(i);
+                    if (el.has("tags")) {
+                        JSONObject tags = el.getJSONObject("tags");
+                        if (tags.has("name")) {
+                            String nama = tags.getString("name");
+                            if (!riwayatTempatDiumumkan.contains(nama)) {
+                                hasil.add(new TempatPro(nama, el.optDouble("lat", cLat), el.optDouble("lon", cLon)));
+                            }
+                        }
+                    }
+                }
+            } catch (Exception e) {}
+            return hasil;
+        }
+
+        @Override
+        protected void onPostExecute(List<TempatPro> result) {
+            if (result != null && !result.isEmpty()) {
+                TempatPro t = result.get(0);
+                float[] dist = new float[1];
+                Location.distanceBetween(cLat, cLon, t.lat, t.lon, dist);
+                String teks = t.nama + ", " + (int)dist[0] + " meter di sekitar Anda.";
+                ucapkanSuara(teks);
+                infoBanner.setText(t.nama + "\n" + (int)dist[0] + " meter di sekitar Anda.");
+                
+                if (!riwayatTempatDiumumkan.contains(t.nama)) {
+                    riwayatTempatDiumumkan.add(t.nama);
+                    if (riwayatTempatDiumumkan.size() > 20) riwayatTempatDiumumkan.remove(0);
+                }
+            }
         }
     }
 
     @Override
     public void onInit(int status) {
-        if (status == TextToSpeech.SUCCESS && ttsEngine != null) {
+        if (status == TextToSpeech.SUCCESS) {
             try {
-                int result = ttsEngine.setLanguage(new Locale("id", "ID"));
-                if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    ttsEngine.setLanguage(Locale.getDefault());
+                if (tts.setLanguage(new Locale("id", "ID")) >= 0) {
+                    isTtsReady = true;
+                    tts.setSpeechRate(kecepatanBicara);
                 }
-                isTtsReady = true;
-            } catch (Exception e) {
-                isTtsReady = false;
-            }
-        } else {
-            isTtsReady = false;
-        }
-    }
-
-    private void suaraNavigasi(String teks) {
-        if (isTtsReady && ttsEngine != null) {
-            try {
-                ttsEngine.speak(teks, TextToSpeech.QUEUE_FLUSH, null, "NavID_" + System.currentTimeMillis());
             } catch (Exception e) {}
         }
     }
 
-    private void stopSuaraTts() {
-        if (ttsEngine != null) {
-            try { ttsEngine.stop(); } catch (Exception e) {}
-        }
-    }
-
-    private void pilihEngineTtsDialog() {
-        if (ttsEngine == null) {
-            suaraNavigasi("TTS belum siap.");
-            menuUtama();
-            return;
-        }
-        
-        List<TextToSpeech.EngineInfo> engines = ttsEngine.getEngines();
-        final List<String> engineList = new ArrayList<>();
-        final List<String> pkgList = new ArrayList<>();
-
-        if (engines != null) {
-            for (TextToSpeech.EngineInfo eng : engines) {
-                engineList.add(eng.label);
-                pkgList.add(eng.name);
-            }
-        }
-
-        if (engineList.isEmpty()) {
-            suaraNavigasi("Tidak ditemukan mesin TTS lain di HP Anda.");
-            menuUtama();
-            return;
-        }
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Pilih Mesin Suara (TTS) Navigasi");
-        builder.setItems(engineList.toArray(new CharSequence[0]), new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String selectedPkg = pkgList.get(which);
-                saveTtsEngine(selectedPkg);
-                initTtsEngine(new Runnable() {
-                    @Override
-                    public void run() {
-                        suaraNavigasi("Suara navigasi berhasil diubah.");
-                    }
-                });
-                menuUtama();
-            }
-        });
-        builder.setNegativeButton("Kembali", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                menuUtama();
-            }
-        });
-        builder.show();
-    }
-
-    // ========================================================
-    // PENYIMPANAN API KEY & BOOKMARK
-    // ========================================================
-    private String getSavedApiKey() {
-        SharedPreferences sp = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
-        return sp.getString(KEY_API, "");
-    }
-
-    private void saveApiKey(String key) {
-        SharedPreferences sp = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
-        sp.edit().putString(KEY_API, key).apply();
-    }
-
-    private List<BookmarkItem> getSavedBookmarks() {
-        List<BookmarkItem> list = new ArrayList<>();
-        SharedPreferences sp = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
-        String rawJson = sp.getString(KEY_BOOKMARKS, "[]");
-        try {
-            JSONArray arr = new JSONArray(rawJson);
-            for (int i = 0; i < arr.length(); i++) {
-                JSONObject obj = arr.getJSONObject(i);
-                list.add(new BookmarkItem(
-                    obj.getString("name"),
-                    obj.getDouble("lat"),
-                    obj.getDouble("lng"),
-                    obj.optString("note", "")
-                ));
-            }
-        } catch (Exception e) {}
-        return list;
-    }
-
-    private void saveBookmarksTable(List<BookmarkItem> list) {
-        SharedPreferences sp = getSharedPreferences(PREF_NAME, MODE_PRIVATE);
-        try {
-            JSONArray arr = new JSONArray();
-            for (BookmarkItem item : list) {
-                JSONObject obj = new JSONObject();
-                obj.put("name", item.name);
-                obj.put("lat", item.lat);
-                obj.put("lng", item.lng);
-                obj.put("note", item.note);
-                arr.put(obj);
-            }
-            sp.edit().putString(KEY_BOOKMARKS, arr.toString()).apply();
-        } catch (Exception e) {}
-    }
-
-    private BookmarkItem simpanLokasiBaru(String nama, double lat, double lng, String note) {
-        List<BookmarkItem> list = getSavedBookmarks();
-        BookmarkItem newItem = new BookmarkItem(nama, lat, lng, note);
-        list.add(newItem);
-        saveBookmarksTable(list);
-        suaraNavigasi("Lokasi " + nama + " berhasil disimpan.");
-        return newItem;
-    }
-
-    private int hitungJarakMeter(double lat1, double lon1, double lat2, double lon2) {
-        double R = 6371000;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLon = Math.toRadians(lon2 - lon1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                   Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
-                   Math.sin(dLon / 2) * Math.sin(dLon / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return (int) Math.floor(R * c);
-    }
-
-    // ========================================================
-    // KONTROL NAVIGASI OTOMATIS & CEK JARAK
-    // ========================================================
-    private void stopLocationUpdates() {
-        if (locationManager != null && activeLocationListener != null) {
+    private void ucapkanSuara(String teks) {
+        if (isTtsReady && tts != null) {
             try {
-                locationManager.removeUpdates(activeLocationListener);
+                Bundle params = new Bundle();
+                params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM, selectedAudioStream);
+                tts.speak(teks, TextToSpeech.QUEUE_ADD, params, null);
             } catch (Exception e) {}
         }
-        activeLocationListener = null;
     }
 
-    private void hentikanNavigasiOtomatis() {
-        isNavigating = false;
-        activeTargetItem = null;
-        activeStartLoc = null;
-        stopLocationUpdates();
-        stopSuaraTts();
-        suaraNavigasi("Navigasi dihentikan.");
-        menuUtama();
-    }
-
-    private void cekSisaJarakDanCatatan() {
-        if (!isNavigating || activeTargetItem == null) {
-            suaraNavigasi("Navigasi otomatis sedang tidak aktif.");
-            menuUtama();
-            return;
-        }
-
-        suaraNavigasi("Mengecek jarak perjalanan...");
-        if (locationManager == null || ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            suaraNavigasi("Izin atau layanan lokasi tidak tersedia.");
-            menuUtama();
-            return;
-        }
-
-        final LocationListener checkListener = new LocationListener() {
-            @Override
-            public void onLocationChanged(Location loc) {
-                if (loc != null) {
-                    try {
-                        locationManager.removeUpdates(this);
-                    } catch (Exception e) {}
-
-                    int sisaJarak = hitungJarakMeter(loc.getLatitude(), loc.getLongitude(), activeTargetItem.lat, activeTargetItem.lng);
-                    String info = "";
-                    if (activeStartLoc != null && (activeStartLoc.lat != 0 || activeStartLoc.lng != 0)) {
-                        int sudahDitempuh = hitungJarakMeter(activeStartLoc.lat, activeStartLoc.lng, loc.getLatitude(), loc.getLongitude());
-                        info = "Anda sudah berjalan " + sudahDitempuh + " meter. Sisa jarak ke " + activeTargetItem.name + " adalah " + sisaJarak + " meter lagi.";
-                    } else {
-                        info = "Sisa jarak ke " + activeTargetItem.name + " adalah " + sisaJarak + " meter lagi.";
-                    }
-
-                    if (activeTargetItem.note != null && !activeTargetItem.note.isEmpty()) {
-                        info += " Catatan panduan: " + activeTargetItem.note;
-                    }
-
-                    suaraNavigasi(info);
-                    menuUtama();
-                }
-            }
-            @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
-            @Override public void onProviderEnabled(String provider) {}
-            @Override public void onProviderDisabled(String provider) {}
-        };
-
+    private void mulaiMendengarkanGPS() {
         try {
-            locationManager.requestSingleUpdate(LocationManager.GPS_PROVIDER, checkListener, Looper.getMainLooper());
-        } catch (Exception e) {}
-    }
-
-    private void mulaiNavigasiOtomatis(BookmarkItem targetItem) {
-        activeTargetItem = targetItem;
-        isNavigating = true;
-
-        if (locationManager == null || !locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            suaraNavigasi("GPS belum aktif.");
-            isNavigating = false;
-            activeTargetItem = null;
-            menuUtama();
-            return;
-        }
-
-        activeStartLoc = new StartLoc(0, 0);
-        stopLocationUpdates();
-        suaraNavigasi("Navigasi otomatis dimulai menuju " + targetItem.name + ".");
-
-        activeLocationListener = new LocationListener() {
-            private double lastValidLat = 0, lastValidLng = 0;
-            private boolean hasAnchor = false;
-            private int maxSudahDitempuh = 0;
-
-            @Override
-            public void onLocationChanged(Location loc) {
-                if (!isNavigating || activeTargetItem == null) {
-                    stopLocationUpdates();
-                    stopSuaraTts();
-                    return;
-                }
-
-                if (loc != null && LocationManager.GPS_PROVIDER.equals(loc.getProvider())) {
-                    float acc = loc.hasAccuracy() ? loc.getAccuracy() : 99;
-                    if (acc <= 3) {
-                        double lat = loc.getLatitude();
-                        double lng = loc.getLongitude();
-
-                        if (!hasAnchor) {
-                            if (lastValidLat != 0 && lastValidLng != 0) {
-                                int jarakAwal = hitungJarakMeter(lastValidLat, lastValidLng, lat, lng);
-                                if (jarakAwal < 5) {
-                                    hasAnchor = true;
-                                    activeStartLoc = new StartLoc(lat, lng);
-                                    suaraNavigasi("Titik awal terkunci stabil pada jarak " + jarakAwal + " meter.");
-                                }
-                            } else {
-                                lastValidLat = lat;
-                                lastValidLng = lng;
-                                return;
-                            }
-                        }
-
-                        if (!hasAnchor) {
-                            lastValidLat = lat;
-                            lastValidLng = lng;
-                            return;
-                        }
-
-                        int jarakDrift = hitungJarakMeter(lastValidLat, lastValidLng, lat, lng);
-                        if (jarakDrift < 3 || jarakDrift > 30) return;
-
-                        lastValidLat = lat;
-                        lastValidLng = lng;
-                        int sisaJarak = hitungJarakMeter(lat, lng, targetItem.lat, targetItem.lng);
-
-                        if (sisaJarak <= 4) {
-                            String pesanTiba = "Anda telah tiba di tujuan " + targetItem.name;
-                            if (targetItem.note != null && !targetItem.note.isEmpty()) {
-                                pesanTiba += ". Catatan panduan: " + targetItem.note;
-                            }
-                            stopLocationUpdates();
-                            isNavigating = false;
-                            activeTargetItem = null;
-                            activeStartLoc = null;
-                            stopSuaraTts();
-                            suaraNavigasi(pesanTiba);
-                        } else {
-                            String pesanProgres = "";
-                            if (activeStartLoc != null && (activeStartLoc.lat != 0 || activeStartLoc.lng != 0)) {
-                                int hitungTemp = hitungJarakMeter(activeStartLoc.lat, activeStartLoc.lng, lat, lng);
-                                if (hitungTemp > maxSudahDitempuh) {
-                                    maxSudahDitempuh = hitungTemp;
-                                }
-                                pesanProgres = "Sudah berjalan " + maxSudahDitempuh + " meter. Sisa jarak ke " + targetItem.name + " adalah " + sisaJarak + " meter lagi.";
-                            } else {
-                                pesanProgres = "Sisa jarak ke " + targetItem.name + " adalah " + sisaJarak + " meter lagi.";
-                            }
-                            suaraNavigasi(pesanProgres);
-                        }
-                    }
+            locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+                    locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 1.0f, this);
                 }
             }
-            @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
-            @Override public void onProviderEnabled(String provider) {}
-            @Override public void onProviderDisabled(String provider) {}
-        };
-
-        try {
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0.5f, activeLocationListener, Looper.getMainLooper());
-            }
-        } catch (Exception e) {}
+        } catch (SecurityException e) {}
     }
 
-    private void bukaAplikasiNavigasi(double lat, double lng) {
-        try {
-            Uri geoUri = Uri.parse("geo:" + lat + "," + lng + "?q=" + lat + "," + lng);
-            Intent mapIntent = new Intent(Intent.ACTION_VIEW, geoUri);
-            mapIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            Intent chooser = Intent.createChooser(mapIntent, "Pilih Aplikasi Navigasi");
-            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            startActivity(chooser);
-        } catch (Exception e) {
-            suaraNavigasi("Gagal membuka aplikasi peta.");
-        }
-    }
-
-    // ========================================================
-    // KUNCI LOKASI 100% PARABOLA DENGAN PESAN KETAT
-    // ========================================================
-    private void kunciLokasiSaatIni() {
-        suaraNavigasi("Mengaktifkan mode parabola satelit. Pastikan di bawah langit terbuka tanpa penghalang.");
-
-        if (locationManager == null || !locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            suaraNavigasi("GPS belum aktif.");
-            menuUtama();
-            return;
-        }
-
-        final Handler timeoutHandler = new Handler(Looper.getMainLooper());
-        final LocationListener[] tempListenerHolder = new LocationListener[1];
-        final boolean[] isLocked = {false};
-
-        tempListenerHolder[0] = new LocationListener() {
-            private int sampleCount = 0;
-            private double accumLat = 0, accumLng = 0;
-            private double lastLat = 0, lastLng = 0;
-
-            @Override
-            public void onLocationChanged(Location loc) {
-                if (isLocked[0]) return;
-                if (loc != null && LocationManager.GPS_PROVIDER.equals(loc.getProvider())) {
-                    long currentTime = System.currentTimeMillis();
-                    long timeLoc = loc.getTime();
-                    if (timeLoc > 0 && (currentTime - timeLoc > 800)) return;
-
-                    float acc = loc.hasAccuracy() ? loc.getAccuracy() : 99;
-                    if (acc <= 3) {
-                        int satCount = 0;
-                        Bundle extras = loc.getExtras();
-                        if (extras != null && extras.containsKey("satellites")) {
-                            satCount = extras.getInt("satellites");
-                        }
-                        if (satCount > 0 && satCount < 5) return;
-
-                        double lat = loc.getLatitude();
-                        double lng = loc.getLongitude();
-
-                        if (sampleCount == 0) {
-                            lastLat = lat;
-                            lastLng = lng;
-                            accumLat = lat;
-                            accumLng = lng;
-                            sampleCount = 1;
-                            suaraNavigasi("Sinyal satelit parabola mendeteksi celah terbuka, mengunci kestabilan...");
-                        } else {
-                            int selisihJarak = hitungJarakMeter(lastLat, lastLng, lat, lng);
-                            if (selisihJarak <= 1) {
-                                sampleCount++;
-                                accumLat += lat;
-                                accumLng += lng;
-                                lastLat = lat;
-                                lastLng = lng;
-
-                                if (sampleCount >= 8) {
-                                    isLocked[0] = true;
-                                    try { locationManager.removeUpdates(tempListenerHolder[0]); } catch (Exception e) {}
-                                    timeoutHandler.removeCallbacksAndMessages(null);
-
-                                    double finalLat = accumLat / 8;
-                                    double finalLng = accumLng / 8;
-                                    String teksInfo = "Sinyal parabola terkunci sempurna! Akurasi " + (int) acc + " meter.";
-                                    pilihAksiLokasi(teksInfo, finalLat, finalLng, "Titik Berdiri Saya");
-                                }
-                            } else {
-                                sampleCount = 1;
-                                accumLat = lat;
-                                accumLng = lng;
-                                lastLat = lat;
-                                lastLng = lng;
-                            }
-                        }
-                    }
-                }
-            }
-            @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
-            @Override public void onProviderEnabled(String provider) {}
-            @Override public void onProviderDisabled(String provider) {}
-        };
-
-        try {
-            if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 200, 0.01f, tempListenerHolder[0], Looper.getMainLooper());
-            }
-        } catch (Exception e) {}
-
-        timeoutHandler.postDelayed(new Runnable() {
-            @Override
-            public void run() {
-                if (!isLocked[0]) {
-                    isLocked[0] = true;
-                    try { locationManager.removeUpdates(tempListenerHolder[0]); } catch (Exception e) {}
-                    // Pesan suara sesuai permintaan jika terhalang/timeout
-                    suaraNavigasi("Lokasi akurat tidak ditemukan karena terhalang.");
-                    menuUtama();
-                }
-            }
-        }, 15000);
-    }
-
-    // ========================================================
-    // PENCARIAN LOKASI DENGAN LOCATIONIQ
-    // ========================================================
-    private void cariLokasiAkurat() {
-        String apiKey = getSavedApiKey();
-        if (apiKey.isEmpty()) {
-            suaraNavigasi("Access Token LocationIQ belum diatur.");
-            inputApiKeyDialog(new Runnable() {
-                @Override
-                public void run() {
-                    dialogCariTeks();
-                }
-            });
-        } else {
-            dialogCariTeks();
-        }
-    }
-
-    private void dialogCariTeks() {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Cari Lokasi di Sinjai");
-        final EditText input = new EditText(this);
-        input.setHint("Contoh: Jalan Anggrek / Masjid Agung");
-        builder.setView(input);
-
-        builder.setPositiveButton("Cari", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String query = input.getText().toString().trim();
-                if (query.isEmpty()) {
-                    suaraNavigasi("Input lokasi tidak boleh kosong");
-                    menuUtama();
-                    return;
-                }
-                if (!query.toLowerCase().contains("sinjai")) {
-                    query += ", Sinjai";
-                }
-                suaraNavigasi("Mencari lokasi di Sinjai...");
-                prosesGeocodingNative(query);
-            }
-        });
-        builder.setNeutralButton("Ubah Token", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                inputApiKeyDialog(null);
-            }
-        });
-        builder.setNegativeButton("Kembali", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                menuUtama();
-            }
-        });
-        builder.show();
-    }
-
-    private void prosesGeocodingNative(final String lokasi) {
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                String apiKey = getSavedApiKey();
-                try {
-                    String encodedQuery = URLEncoder.encode(lokasi, "UTF-8");
-                    String urlString = "https://us1.locationiq.com/v1/search?key=" + apiKey + "&q=" + encodedQuery + "&format=json&accept-language=id";
-                    URL url = new URL(urlString);
-                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-                    conn.setRequestMethod("GET");
-                    conn.setConnectTimeout(8000);
-                    conn.setReadTimeout(8000);
-
-                    if (conn.getResponseCode() == 200) {
-                        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
-                        StringBuilder sb = new StringBuilder();
-                        String line;
-                        while ((line = reader.readLine()) != null) sb.append(line);
-                        reader.close();
-                        conn.disconnect();
-
-                        final JSONArray jsonArray = new JSONArray(sb.toString());
-                        if (jsonArray.length() > 0) {
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    try {
-                                        if (jsonArray.length() == 1) {
-                                            JSONObject item = jsonArray.getJSONObject(0);
-                                            pilihAksiLokasi("Lokasi ditemukan: " + item.getString("display_name"), item.getDouble("lat"), item.getDouble("lon"), item.getString("display_name"));
-                                        } else {
-                                            pilihPilihanLokasiLocationIQ(jsonArray);
-                                        }
-                                    } catch (Exception e) {}
-                                }
-                            });
-                        } else {
-                            runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    suaraNavigasi("Lokasi tidak ditemukan di wilayah Sinjai.");
-                                    menuUtama();
-                                }
-                            });
-                        }
-                    } else {
-                        conn.disconnect();
-                        runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                suaraNavigasi("Gagal terhubung ke server lokasi.");
-                                menuUtama();
-                            }
-                        });
-                    }
-                } catch (Exception e) {
-                    runOnUiThread(new Runnable() {
-                        @Override
-                        public void run() {
-                            suaraNavigasi("Gagal memproses pencarian.");
-                            menuUtama();
-                        }
-                    });
-                }
-            }
-        }).start();
-    }
-
-    private void pilihPilihanLokasiLocationIQ(final JSONArray results) {
-        try {
-            final CharSequence[] addresses = new CharSequence[results.length()];
-            for (int i = 0; i < results.length(); i++) {
-                addresses[i] = results.getJSONObject(i).getString("display_name");
-            }
-
-            AlertDialog.Builder builder = new AlertDialog.Builder(this);
-            builder.setTitle("Pilih Lokasi Sesuai");
-            builder.setItems(addresses, new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    try {
-                        JSONObject selected = results.getJSONObject(which);
-                        pilihAksiLokasi("Lokasi dipilih: " + selected.getString("display_name"), selected.getDouble("lat"), selected.getDouble("lon"), selected.getString("display_name"));
-                    } catch (Exception e) {}
-                }
-            });
-            builder.setNegativeButton("Kembali", new DialogInterface.OnClickListener() {
-                @Override
-                public void onClick(DialogInterface dialog, int which) {
-                    menuUtama();
-                }
-            });
-            builder.show();
-        } catch (Exception e) {}
-    }
-
-    private void inputApiKeyDialog(final Runnable onSuccessCallback) {
-        String currentKey = getSavedApiKey();
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Access Token LocationIQ");
-        builder.setMessage("Masukkan Access Token LocationIQ Anda:");
-
-        final EditText input = new EditText(this);
-        input.setHint("pk.xxxxxxxxxxxxxxxx");
-        if (!currentKey.isEmpty()) input.setText(currentKey);
-        builder.setView(input);
-
-        builder.setPositiveButton("Simpan", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String newKey = input.getText().toString().trim();
-                if (newKey.isEmpty()) {
-                    suaraNavigasi("Access Token tidak boleh kosong");
-                } else {
-                    saveApiKey(newKey);
-                    suaraNavigasi("Access Token berhasil disimpan");
-                    if (onSuccessCallback != null) {
-                        onSuccessCallback.run();
-                    } else {
-                        menuUtama();
-                    }
-                }
-            }
-        });
-        builder.setNegativeButton("Kembali", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                menuUtama();
-            }
-        });
-        builder.show();
-    }
-
-    private void pilihAksiLokasi(String pesanSuara, final double lat, final double lng, final String defaultNama) {
-        suaraNavigasi(pesanSuara);
-        CharSequence[] options = {
-            "▶ Langsung Navigasi Otomatis",
-            "🗺️ Buka Aplikasi Navigasi Lain (Google Maps/Lazarillo)",
-            "💾 Simpan ke Bookmark Dulu"
-        };
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Hasil Pencarian Lokasi");
-        builder.setItems(options, new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                if (which == 0) {
-                    mulaiNavigasiOtomatis(new BookmarkItem(defaultNama, lat, lng, ""));
-                } else if (which == 1) {
-                    bukaAplikasiNavigasi(lat, lng);
-                } else if (which == 2) {
-                    dialogSimpanNamaDanCatatan(defaultNama, lat, lng);
-                }
-            }
-        });
-        builder.setNegativeButton("Kembali", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                menuUtama();
-            }
-        });
-        builder.show();
-    }
-
-    private void dialogSimpanNamaDanCatatan(final String defaultNama, final double lat, final double lng) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Simpan Bookmark Lokasi");
-
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(40, 20, 40, 20);
-
-        final EditText txtNama = new EditText(this);
-        txtNama.setHint("Nama Penanda");
-        txtNama.setText(defaultNama);
-        layout.addView(txtNama);
-
-        final EditText txtNote = new EditText(this);
-        txtNote.setHint("Catatan Panduan (Misal: Pagar bambu)");
-        layout.addView(txtNote);
-
-        builder.setView(layout);
-
-        builder.setPositiveButton("Simpan Saja", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String namaInput = txtNama.getText().toString().trim();
-                String noteInput = txtNote.getText().toString().trim();
-                if (namaInput.isEmpty()) namaInput = "Lokasi Tanpa Nama";
-                simpanLokasiBaru(namaInput, lat, lng, noteInput);
-                menuUtama();
-            }
-        });
-        builder.setNeutralButton("Simpan & Navigasi", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String namaInput = txtNama.getText().toString().trim();
-                String noteInput = txtNote.getText().toString().trim();
-                if (namaInput.isEmpty()) namaInput = "Lokasi Tanpa Nama";
-                BookmarkItem savedItem = simpanLokasiBaru(namaInput, lat, lng, noteInput);
-                mulaiNavigasiOtomatis(savedItem);
-            }
-        });
-        builder.setNegativeButton("Kembali", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                menuUtama();
-            }
-        });
-        builder.show();
-    }
-
-    private void kelolaLokasiTersimpan() {
-        final List<BookmarkItem> list = getSavedBookmarks();
-        if (list.isEmpty()) {
-            suaraNavigasi("Belum ada lokasi yang tersimpan.");
-            menuUtama();
-            return;
-        }
-
-        CharSequence[] items = new CharSequence[list.size()];
-        for (int i = 0; i < list.size(); i++) {
-            items[i] = list.get(i).name;
-        }
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Daftar Lokasi Tersimpan");
-        builder.setItems(items, new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                BookmarkItem selectedItem = list.get(which);
-                menuAksiLokasiTersimpan(selectedItem, which);
-            }
-        });
-        builder.setNegativeButton("Kembali", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                menuUtama();
-            }
-        });
-        builder.show();
-    }
-
-    private void menuAksiLokasiTersimpan(final BookmarkItem item, final int index) {
-        CharSequence[] options = {
-            "▶️ Mulai Navigasi Otomatis",
-            "🗺️ Buka Aplikasi Navigasi Lain (Google Maps/Lazarillo)",
-            "✏️ Edit Nama & Catatan Panduan",
-            "🗑️ Hapus Lokasi Ini"
-        };
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle(item.name);
-        builder.setItems(options, new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                if (which == 0) {
-                    mulaiNavigasiOtomatis(item);
-                } else if (which == 1) {
-                    bukaAplikasiNavigasi(item.lat, item.lng);
-                } else if (which == 2) {
-                    dialogEditNamaDanCatatan(item, index);
-                } else if (which == 3) {
-                    dialogKonfirmasiHapus(item, index);
-                }
-            }
-        });
-        builder.setNegativeButton("Kembali", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                kelolaLokasiTersimpan();
-            }
-        });
-        builder.show();
-    }
-
-    private void dialogEditNamaDanCatatan(final BookmarkItem item, final int index) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Edit Bookmark");
-
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(40, 20, 40, 20);
-
-        final EditText txtNama = new EditText(this);
-        txtNama.setText(item.name);
-        layout.addView(txtNama);
-
-        final EditText txtNote = new EditText(this);
-        txtNote.setText(item.note);
-        txtNote.setHint("Catatan Panduan (Misal: Pagar bambu)");
-        layout.addView(txtNote);
-
-        builder.setView(layout);
-        builder.setPositiveButton("Simpan", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                String newName = txtNama.getText().toString().trim();
-                String newNote = txtNote.getText().toString().trim();
-                if (!newName.isEmpty()) {
-                    List<BookmarkItem> list = getSavedBookmarks();
-                    if (index < list.size()) {
-                        list.get(index).name = newName;
-                        list.get(index).note = newNote;
-                        saveBookmarksTable(list);
-                        suaraNavigasi("Bookmark berhasil diperbarui.");
-                    }
-                }
-                kelolaLokasiTersimpan();
-            }
-        });
-        builder.setNegativeButton("Batal", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                kelolaLokasiTersimpan();
-            }
-        });
-        builder.show();
-    }
-
-    private void dialogKonfirmasiHapus(final BookmarkItem item, final int index) {
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Hapus Lokasi");
-        builder.setMessage("Apakah Anda yakin ingin menghapus " + item.name + "?");
-        builder.setPositiveButton("Hapus", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                List<BookmarkItem> list = getSavedBookmarks();
-                if (index < list.size()) {
-                    list.remove(index);
-                    saveBookmarksTable(list);
-                    suaraNavigasi("Lokasi " + item.name + " berhasil dihapus.");
-                }
-                kelolaLokasiTersimpan();
-            }
-        });
-        builder.setNegativeButton("Batal", new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                kelolaLokasiTersimpan();
-            }
-        });
-        builder.show();
-    }
-
-    private void menuUtama() {
-        CharSequence[] menuOptions = {
-            "📍 Kunci Lokasi & Mulai Navigasi Otomatis",
-            "🔍 Cari Lokasi di Sinjai (LocationIQ)",
-            "📏 Cek Sisa Jarak & Catatan Panduan",
-            "💾 Kelola Lokasi Tersimpan",
-            "🗣️ Pilih Mesin Suara (TTS) Navigasi",
-            "🔑 Pengaturan Access Token LocationIQ",
-            "⏱️ Hentikan Navigasi Otomatis"
-        };
-
-        AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle("Menu Navigasi Otomatis");
-        builder.setItems(menuOptions, new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                switch (which) {
-                    case 0: kunciLokasiSaatIni(); break;
-                    case 1: cariLokasiAkurat(); break;
-                    case 2: cekSisaJarakDanCatatan(); break;
-                    case 3: kelolaLokasiTersimpan(); break;
-                    case 4: pilihEngineTtsDialog(); break;
-                    case 5: inputApiKeyDialog(null); break;
-                    case 6: hentikanNavigasiOtomatis(); break;
-                }
-            }
-        });
-        builder.setNegativeButton("Tutup", null);
-        builder.show();
-    }
+    @Override public void onLocationChanged(Location location) {}
+    @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
+    @Override public void onProviderEnabled(String provider) {}
+    @Override public void onProviderDisabled(String provider) { ucapkanSuara("GPS dimatikan."); }
 
     @Override
     protected void onDestroy() {
-        stopLocationUpdates();
-        stopSuaraTts();
+        hentikanEksplorasiRealTime();
+        if (tts != null) { try { tts.stop(); tts.shutdown(); } catch (Exception e) {} }
+        if (locationManager != null && ActivityCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            locationManager.removeUpdates(this);
+        }
+        hentikanSensorKompas();
         super.onDestroy();
     }
 }
