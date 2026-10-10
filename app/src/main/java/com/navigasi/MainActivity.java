@@ -164,7 +164,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
     }
 
     // ==========================================
-    // TAMPILAN UTAMA PERSIS LAZARILLO[span_5](start_span)[span_5](end_span)
+    // TAMPILAN UTAMA PERSIS LAZARILLO
     // ==========================================
     private void tampilkanHalamanExploration() {
         LinearLayout mainRoot = new LinearLayout(this);
@@ -186,7 +186,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         tvTitleApp.setLayoutParams(new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f));
         topBar.addView(tvTitleApp);
 
-        // Tombol Atas: Jeda, Target GPS, Cari, Menu
         Button btnPause = createTopBarButton("⏸");
         btnPause.setOnClickListener(v -> {
             isEksplorasiFiturAktif = false;
@@ -217,7 +216,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         contentLayout.setOrientation(LinearLayout.VERTICAL);
         contentLayout.setPadding(20, 20, 20, 20);
 
-        // 2. BANNER STATUS TEMPAT TERDEKAT DI ATAS[span_6](start_span)[span_6](end_span)
+        // 2. BANNER STATUS TEMPAT TERDEKAT DI ATAS
         LinearLayout bannerCard = new LinearLayout(this);
         bannerCard.setOrientation(LinearLayout.VERTICAL);
         bannerCard.setBackgroundColor(Color.parseColor("#D32F2F"));
@@ -243,7 +242,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         spacer.setLayoutParams(new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 24));
         contentLayout.addView(spacer);
 
-        // 3. GRID MENU KATEGORI (11 Menu Persis Gambar Lazarillo)[span_7](start_span)[span_7](end_span)
+        // 3. GRID MENU KATEGORI (11 Menu Persis Gambar Lazarillo)
         GridLayout gridMenu = new GridLayout(this);
         gridMenu.setColumnCount(3);
         gridMenu.setAlignmentMode(GridLayout.ALIGN_BOUNDS);
@@ -264,7 +263,7 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         scrollView.addView(contentLayout);
         mainRoot.addView(scrollView);
 
-        // 4. BOTTOM NAVIGATION BAR (Menu Bawah)[span_8](start_span)[span_8](end_span)
+        // 4. BOTTOM NAVIGATION BAR (Menu Bawah)
         LinearLayout bottomBar = new LinearLayout(this);
         bottomBar.setOrientation(LinearLayout.HORIZONTAL);
         bottomBar.setBackgroundColor(Color.parseColor("#FAFAFA"));
@@ -278,7 +277,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         mainRoot.addView(bottomBar);
         setContentView(mainRoot);
 
-        // Mulai layanan latar belakang eksplorasi
         isEksplorasiFiturAktif = true;
         mulaiSensorKompas();
         mulaiMendengarkanGPS();
@@ -350,9 +348,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         return tv;
     }
 
-    // ==========================================
-    // FUNGSI UTAMA MENU & KATEGORI
-    > ==========================================
     private void tampilkanRiwayatPengumuman() {
         if (riwayatTempatDiumumkan.isEmpty()) {
             ucapkanSuara("Belum ada tempat yang baru diumumkan.");
@@ -452,9 +447,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         }
     }
 
-    // ==========================================
-    // MENU BAWAH: FAVOURITES, NEWS, SETTINGS
-    // ==========================================
     private void tampilkanHalamanFavourites() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -551,9 +543,6 @@ public class MainActivity extends Activity implements LocationListener, SensorEv
         ucapkanSuara("Halaman Pengaturan dibuka.");
     }
 
-    // ==========================================
-    // BACKGROUND SERVICE & GPS
-    // ==========================================
     private void mulaiEksplorasiRealTime() {
         if (explorationRunnable == null) {
             explorationRunnable = new Runnable() {
